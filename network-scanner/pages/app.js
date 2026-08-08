@@ -4087,15 +4087,18 @@ ${deviceInfo}
     try {
       const r = await api.detectOs(device);
       if (r.success) {
-        const os = r.os || {};
-        const confidence = os.confidence != null ? `${Math.round(os.confidence * 100)}%` : '-';
+        // detectOs 返回 { os: string, method: string, confidence: number, scores?: {} }
+        const osName = typeof r.os === 'object' ? (r.os.name || '未知') : (r.os || '未知');
+        const confidence = r.confidence != null ? `${Math.round(r.confidence * 100)}%` : (r.os && r.os.confidence != null ? `${Math.round(r.os.confidence * 100)}%` : '-');
+        const method = r.method || (r.os && r.os.method) || '-';
+        const scores = r.scores || (r.os && r.os.scores) || {};
+        const scoreRows = Object.entries(scores).filter(([, v]) => v > 0).map(([k, v]) => `${k}: ${v}`).join(' · ');
         const rows = [
-          { label: '操作系统', value: os.name || '未知' },
-          { label: '版本', value: os.version || '-' },
-          { label: '架构', value: os.arch || '-' },
-          { label: '置信度', value: confidence },
-          { label: '检测方法', value: os.method || '-' }
+          { label: '操作系统', value: osName },
+          { label: '检测方法', value: method },
+          { label: '置信度', value: confidence }
         ];
+        if (scoreRows) rows.push({ label: '特征评分', value: scoreRows });
         const rowsHtml = rows.map(row => `
           <div style="display:flex; align-items:center; justify-content:space-between; padding:8px 10px; border-bottom:1px solid var(--scanner-border);">
             <span style="font-size:12px; color:var(--scanner-ink-2);">${row.label}</span>
@@ -4108,7 +4111,7 @@ ${deviceInfo}
             OS 指纹检测结果
           </div>
           <div class="port-list">${rowsHtml}</div>
-          ${os.details ? `<div class="action-panel-hint" style="margin-top:6px;">${os.details}</div>` : ''}
+          ${scoreRows ? `<div class="action-panel-hint" style="margin-top:6px;">基于开放端口组合进行 TTL/TCP 指纹推断</div>` : '<div class="action-panel-hint" style="margin-top:6px;">该设备无特征端口，结果基于设备分类推断</div>'}
         `;
         lucide.createIcons();
       } else {

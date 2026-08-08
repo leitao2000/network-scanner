@@ -2174,10 +2174,10 @@ body {
       <div data-viewport-mode="app-shell" class="bg-background text-foreground">
         <!-- Sidebar -->
         <aside data-shell="sidebar" class="flex flex-col" data-region="local-info">
-          <!-- Logo Header（更厚实） -->
-          <div class="px-5 py-4 border-b border-border bg-card/50">
+          <!-- Logo Header（与主内容区顶部齐平） -->
+          <div class="px-6 py-3 border-b border-border" style="background:var(--scanner-card);">
             <div class="flex items-center gap-3">
-              <div class="w-10 h-10 rounded-xl bg-primary text-primary-foreground flex items-center justify-center shadow-1 shrink-0">
+              <div class="w-9 h-9 rounded-lg bg-primary text-primary-foreground flex items-center justify-center shadow-1 shrink-0">
                 <i data-lucide="scan" class="w-5 h-5"></i>
               </div>
               <div class="min-w-0">
@@ -2199,7 +2199,7 @@ body {
                   <span class="text-[11px] font-semibold uppercase tracking-wider opacity-80">本机 IP 地址</span>
                   <span id="local-prefix" class="text-[10px] px-2 py-0.5 rounded-full bg-white/25 font-bold backdrop-blur-sm">/24</span>
                 </div>
-                <div id="local-ip" class="text-3xl font-black scanner-mono mb-5 tracking-tight" style="font-size:clamp(22px, 2.4vw, 30px);">-</div>
+                <div id="local-ip" class="text-3xl font-black scanner-mono mb-5 tracking-tight" style="font-size:clamp(22px, 2vw, 20px);">-</div>
 
                 <!-- 4 项网络参数（单列，一行一个，横向行布局） -->
                 <div class="space-y-2 mb-4">
@@ -2333,15 +2333,15 @@ body {
         <!-- Main workspace -->
         <div data-shell="main">
           <!-- Top header -->
-          <header class="sticky top-0 z-10 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80 border-b border-border">
+          <header class="border-b border-border" style="background:var(--scanner-card); backdrop-filter:blur(8px); -webkit-backdrop-filter:blur(8px);height: 57px;">
             <div class="flex items-center justify-between gap-4 px-6 py-3">
               <div class="flex items-center gap-3 min-w-0 cursor-pointer group" id="app-about" title="点击查看关于">
                 <div class="w-9 h-9 rounded-lg bg-primary text-primary-foreground flex items-center justify-center shrink-0 group-hover:bg-primary/90 transition">
                   <i data-lucide="scan" class="w-5 h-5"></i>
                 </div>
                 <div class="min-w-0">
-                  <h1 class="text-base font-semibold text-foreground truncate">本地网络扫描</h1>
-                  <p class="text-xs text-muted-foreground">v1.0.0 · 网络运维团队</p>
+                  <h1 class="text-[15px] font-bold text-foreground leading-tight truncate">本地网络扫描</h1>
+                  <p class="text-[11px] text-muted-foreground mt-0.5">v1.0.0 · 网络运维团队</p>
                 </div>
               </div>
 
@@ -3399,14 +3399,14 @@ body {
 
     <style id="critical-layout">
       :root { --scanner-sidebar-width: 260px; }
-      html, body { margin: 0; padding: 0; min-height: 100vh; }
-      [data-viewport-mode="app-shell"] { display: flex; min-height: 100vh; align-items: stretch; }
+      html, body { margin: 0; padding: 0; height: 100vh; overflow: hidden; }
+      [data-viewport-mode="app-shell"] { display: flex; height: 100vh; }
       [data-shell="sidebar"] {
-        position: sticky;
+        position: fixed;
         top: 0;
-        align-self: flex-start;
+        left: 0;
         width: var(--scanner-sidebar-width);
-        max-height: 100vh;
+        height: 100vh;
         overflow-y: auto;
         overflow-x: hidden;
         border-right: 1px solid var(--scanner-border);
@@ -3417,16 +3417,21 @@ body {
       [data-shell="main"] {
         flex: 1 1 auto;
         min-width: 0;
-        min-height: 100vh;
-        margin-left: 0 !important;
+        height: 100vh;
+        margin-left: var(--scanner-sidebar-width) !important;
         display: flex;
         flex-direction: column;
+        overflow: hidden;
+      }
+      /* 主内容区 header 固定，与侧边栏齐平 */
+      [data-shell="main"] > header {
+        flex-shrink: 0;
       }
       [data-scroll-region="primary"] {
         flex: 1 1 auto;
         min-height: 0;
-        overflow-y: visible;
-        overflow-x: visible;
+        overflow-y: auto;
+        overflow-x: hidden;
       }
       [data-table-wrap] { min-width: 0; overflow-x: auto; }
       [data-table] { min-width: 680px; width: 100%; border-collapse: collapse; }
@@ -3496,7 +3501,7 @@ body {
       @media (max-width: 768px) {
         :root { --scanner-sidebar-width: 0px; }
         [data-shell="sidebar"] { display: none; }
-        [data-shell="main"] { margin-left: 0; }
+        [data-shell="main"] { margin-left: 0 !important; }
       }
     </style>
 </body>
