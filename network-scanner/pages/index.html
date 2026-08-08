@@ -1,0 +1,803 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>网络扫描</title>
+    <style id="theme-vars">
+/* Network Scanner - color, type, and radius tokens */
+
+:root {
+  /* Primary hue: cool blue (engineering / tooling tone) */
+  --scanner-primary-h: 217;
+  --scanner-primary-s: 91%;
+  --scanner-primary-l: 46%;
+
+  --scanner-primary: hsl(var(--scanner-primary-h), var(--scanner-primary-s), var(--scanner-primary-l));
+  --scanner-primary-foreground: #ffffff;
+  --scanner-primary-50: hsl(var(--scanner-primary-h), var(--scanner-primary-s), 97%);
+  --scanner-primary-100: hsl(var(--scanner-primary-h), var(--scanner-primary-s), 92%);
+  --scanner-primary-200: hsl(var(--scanner-primary-h), var(--scanner-primary-s), 82%);
+  --scanner-primary-600: hsl(var(--scanner-primary-h), var(--scanner-primary-s), 40%);
+
+  /* Neutral surfaces */
+  --scanner-background: #f6f7f9;
+  --scanner-foreground: #0f172a;
+  --scanner-card: #ffffff;
+  --scanner-card-foreground: #0f172a;
+  --scanner-popover: #ffffff;
+  --scanner-popover-foreground: #0f172a;
+  --scanner-muted: #f1f5f9;
+  --scanner-muted-foreground: #64748b;
+  --scanner-border: #e2e8f0;
+  --scanner-input: #ffffff;
+  --scanner-ring: var(--scanner-primary);
+
+  /* Destructive */
+  --scanner-destructive: #ef4444;
+  --scanner-destructive-foreground: #ffffff;
+
+  /* Text */
+  --scanner-ink: #0f172a;
+  --scanner-ink-2: #475569;
+  --scanner-ink-3: #94a3b8;
+  --scanner-line: #e2e8f0;
+
+  /* Radius */
+  --scanner-radius-xs: 2px;
+  --scanner-radius-sm: 4px;
+  --scanner-radius-md: 8px;
+  --scanner-radius-lg: 12px;
+  --scanner-radius-xl: 16px;
+  --scanner-radius-pill: 999px;
+
+  /* Shadows */
+  --scanner-shadow-1: 0 1px 2px rgba(15, 23, 42, 0.05), 0 1px 1px rgba(15, 23, 42, 0.03);
+  --scanner-shadow-2: 0 4px 12px rgba(15, 23, 42, 0.08);
+  --scanner-shadow-3: 0 16px 40px rgba(15, 23, 42, 0.14);
+
+  /* Semantic state colors */
+  --scanner-state-success: #16a34a;
+  --scanner-state-success-bg: #dcfce7;
+  --scanner-state-warning: #f59e0b;
+  --scanner-state-warning-bg: #fef3c7;
+  --scanner-state-error: #ef4444;
+  --scanner-state-error-bg: #fee2e2;
+  --scanner-state-info: #3b82f6;
+  --scanner-state-info-bg: #dbeafe;
+
+  /* Typography */
+  --scanner-font-sans: Inter, "PingFang SC", "Microsoft YaHei", "Noto Sans SC", system-ui, sans-serif;
+  --scanner-font-mono: "SF Mono", "JetBrains Mono", "Fira Code", "Cascadia Code", Consolas, monospace;
+
+  /* Spacing */
+  --scanner-s-1: 4px;
+  --scanner-s-2: 8px;
+  --scanner-s-3: 12px;
+  --scanner-s-4: 16px;
+  --scanner-s-5: 20px;
+  --scanner-s-6: 24px;
+  --scanner-s-7: 32px;
+  --scanner-s-8: 48px;
+}
+
+/* Dark mode tokens */
+html.dark {
+  --scanner-background: #0b0d12;
+  --scanner-foreground: #f1f5f9;
+  --scanner-card: #12151c;
+  --scanner-card-foreground: #f1f5f9;
+  --scanner-popover: #1a1d25;
+  --scanner-popover-foreground: #f1f5f9;
+  --scanner-muted: #1e232d;
+  --scanner-muted-foreground: #94a3b8;
+  --scanner-border: #272b36;
+  --scanner-input: #1a1d25;
+  --scanner-line: #272b36;
+  --scanner-ink: #f1f5f9;
+  --scanner-ink-2: #94a3b8;
+  --scanner-ink-3: #64748b;
+  --scanner-destructive: #ef4444;
+  --scanner-destructive-foreground: #ffffff;
+  --scanner-shadow-1: 0 1px 2px rgba(0, 0, 0, 0.25), 0 1px 1px rgba(0, 0, 0, 0.15);
+  --scanner-shadow-2: 0 4px 12px rgba(0, 0, 0, 0.35);
+  --scanner-shadow-3: 0 16px 40px rgba(0, 0, 0, 0.45);
+}
+
+body {
+  font-family: var(--scanner-font-sans);
+  color: var(--scanner-ink);
+  background-color: var(--scanner-background);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4.3.1/dist/index.global.js"></script>
+    <script src="../assets/lucide.min.js"></script>
+    <style type="text/tailwindcss">
+  @theme inline {
+    --color-background: var(--scanner-background);
+    --color-foreground: var(--scanner-foreground);
+    --color-card: var(--scanner-card);
+    --color-card-foreground: var(--scanner-card-foreground);
+    --color-popover: var(--scanner-popover);
+    --color-popover-foreground: var(--scanner-popover-foreground);
+    --color-primary: var(--scanner-primary);
+    --color-primary-foreground: var(--scanner-primary-foreground);
+    --color-muted: var(--scanner-muted);
+    --color-muted-foreground: var(--scanner-muted-foreground);
+    --color-border: var(--scanner-border);
+    --color-input: var(--scanner-input);
+    --color-ring: var(--scanner-ring);
+    --color-destructive: var(--scanner-destructive);
+    --color-destructive-foreground: var(--scanner-destructive-foreground);
+    --radius-sm: var(--scanner-radius-sm);
+    --radius-md: var(--scanner-radius-md);
+    --radius-lg: var(--scanner-radius-lg);
+    --radius-xl: var(--scanner-radius-xl);
+  }
+  @layer base {
+    body { background: var(--scanner-background); color: var(--scanner-foreground); }
+    td, th { @apply break-words; word-break: break-all; word-break: auto-phrase; }
+    th { @apply whitespace-nowrap; }
+  }
+    </style>
+    <style id="semantic-token-fallback">
+      .bg-background { background-color: var(--scanner-background); }
+      .text-background { color: var(--scanner-background); }
+      .border-background { border-color: var(--scanner-background); }
+      .ring-background { --tw-ring-color: var(--scanner-background); }
+      .bg-foreground { background-color: var(--scanner-foreground); }
+      .text-foreground { color: var(--scanner-foreground); }
+      .border-foreground { border-color: var(--scanner-foreground); }
+      .ring-foreground { --tw-ring-color: var(--scanner-foreground); }
+      .bg-card { background-color: var(--scanner-card); }
+      .text-card { color: var(--scanner-card); }
+      .border-card { border-color: var(--scanner-card); }
+      .ring-card { --tw-ring-color: var(--scanner-card); }
+      .bg-card-foreground { background-color: var(--scanner-card-foreground); }
+      .text-card-foreground { color: var(--scanner-card-foreground); }
+      .border-card-foreground { border-color: var(--scanner-card-foreground); }
+      .ring-card-foreground { --tw-ring-color: var(--scanner-card-foreground); }
+      .bg-popover { background-color: var(--scanner-popover); }
+      .text-popover { color: var(--scanner-popover); }
+      .border-popover { border-color: var(--scanner-popover); }
+      .ring-popover { --tw-ring-color: var(--scanner-popover); }
+      .bg-popover-foreground { background-color: var(--scanner-popover-foreground); }
+      .text-popover-foreground { color: var(--scanner-popover-foreground); }
+      .border-popover-foreground { border-color: var(--scanner-popover-foreground); }
+      .ring-popover-foreground { --tw-ring-color: var(--scanner-popover-foreground); }
+      .bg-primary { background-color: var(--scanner-primary); }
+      .text-primary { color: var(--scanner-primary); }
+      .border-primary { border-color: var(--scanner-primary); }
+      .ring-primary { --tw-ring-color: var(--scanner-primary); }
+      .bg-primary-foreground { background-color: var(--scanner-primary-foreground); }
+      .text-primary-foreground { color: var(--scanner-primary-foreground); }
+      .border-primary-foreground { border-color: var(--scanner-primary-foreground); }
+      .ring-primary-foreground { --tw-ring-color: var(--scanner-primary-foreground); }
+      .bg-muted { background-color: var(--scanner-muted); }
+      .text-muted { color: var(--scanner-muted); }
+      .border-muted { border-color: var(--scanner-muted); }
+      .ring-muted { --tw-ring-color: var(--scanner-muted); }
+      .bg-muted-foreground { background-color: var(--scanner-muted-foreground); }
+      .text-muted-foreground { color: var(--scanner-muted-foreground); }
+      .border-muted-foreground { border-color: var(--scanner-muted-foreground); }
+      .ring-muted-foreground { --tw-ring-color: var(--scanner-muted-foreground); }
+      .bg-border { background-color: var(--scanner-border); }
+      .text-border { color: var(--scanner-border); }
+      .border-border { border-color: var(--scanner-border); }
+      .ring-border { --tw-ring-color: var(--scanner-border); }
+      .bg-input { background-color: var(--scanner-input); }
+      .text-input { color: var(--scanner-input); }
+      .border-input { border-color: var(--scanner-input); }
+      .ring-input { --tw-ring-color: var(--scanner-input); }
+      .bg-ring { background-color: var(--scanner-ring); }
+      .text-ring { color: var(--scanner-ring); }
+      .border-ring { border-color: var(--scanner-ring); }
+      .ring-ring { --tw-ring-color: var(--scanner-ring); }
+      .bg-destructive { background-color: var(--scanner-destructive); }
+      .text-destructive { color: var(--scanner-destructive); }
+      .border-destructive { border-color: var(--scanner-destructive); }
+      .ring-destructive { --tw-ring-color: var(--scanner-destructive); }
+    </style>
+    <style>
+      .no-scrollbar::-webkit-scrollbar { display: none; }
+      .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+      [data-icon] {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        -webkit-mask-size: contain;
+        mask-size: contain;
+        -webkit-mask-repeat: no-repeat;
+        mask-repeat: no-repeat;
+        -webkit-mask-position: center;
+        mask-position: center;
+        background-color: currentColor;
+      }
+      .progress-bar { transition: width 0.3s ease; }
+      .device-row-enter { animation: fadeIn 0.2s ease; }
+      @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+
+      /* 扫描动画 */
+      @keyframes scanPulse {
+        0% { opacity: 1; }
+        50% { opacity: 0.5; }
+        100% { opacity: 1; }
+      }
+      @keyframes scanShimmer {
+        0% { background-position: -200% 0; }
+        100% { background-position: 200% 0; }
+      }
+      @keyframes spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+      }
+      .scan-pulse { animation: scanPulse 1.5s ease-in-out infinite; }
+      .scan-shimmer {
+        background: linear-gradient(90deg, transparent 0%, var(--scanner-primary) 50%, transparent 100%);
+        background-size: 200% 100%;
+        animation: scanShimmer 1.8s ease-in-out infinite;
+      }
+      .btn-disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+        pointer-events: none;
+      }
+
+      /* 骨架屏 */
+      .skeleton {
+        background: linear-gradient(90deg, var(--scanner-muted) 25%, var(--scanner-border) 50%, var(--scanner-muted) 75%);
+        background-size: 200% 100%;
+        animation: scanShimmer 1.5s ease-in-out infinite;
+        border-radius: var(--scanner-radius-sm);
+      }
+
+      /* 表格 sticky header */
+      [data-table] thead {
+        position: sticky;
+        top: 0;
+        z-index: 5;
+      }
+
+      /* 本机信息卡片 */
+      .local-info-card {
+        background: linear-gradient(135deg, var(--scanner-primary), var(--scanner-primary-600));
+        color: var(--scanner-primary-foreground);
+        border-radius: var(--scanner-radius-xl);
+        padding: var(--scanner-s-4);
+        box-shadow: var(--scanner-shadow-2);
+      }
+      .local-info-card .info-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: var(--scanner-s-2);
+        font-size: 0.75rem;
+      }
+      .local-info-card .info-row span:first-child {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        opacity: 0.9;
+      }
+      .local-info-card .info-row .scanner-mono { opacity: 0.95; }
+      .local-info-card .info-divider {
+        border-top: 1px solid rgba(255,255,255,0.2);
+        padding-top: var(--scanner-s-3);
+        margin-top: var(--scanner-s-3);
+      }
+      .local-info-card .info-divider .split-row {
+        display: flex;
+        justify-content: space-between;
+        gap: var(--scanner-s-2);
+        font-size: 0.75rem;
+      }
+      .local-info-card .info-divider .split-row span:first-child { opacity: 0.7; }
+
+      /* 抽屉详情 */
+      .drawer-backdrop {
+        position: fixed;
+        inset: 0;
+        background: rgba(0,0,0,0.3);
+        z-index: 50;
+        justify-content: flex-end;
+      }
+      .drawer-panel {
+        width: 420px;
+        max-width: 90vw;
+        height: 100vh;
+        background: var(--scanner-card);
+        box-shadow: -8px 0 32px rgba(0,0,0,0.12);
+        display: flex;
+        flex-direction: column;
+        transform: translateX(100%);
+        transition: transform 0.25s ease;
+      }
+      .drawer-header {
+        padding: 20px 24px 16px;
+        border-bottom: 1px solid var(--scanner-border);
+      }
+      .drawer-header .drawer-top {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 16px;
+      }
+      .drawer-header h3 {
+        font-size: 13px;
+        font-weight: 600;
+        color: var(--scanner-ink);
+        margin: 0 0 2px 0;
+      }
+      .drawer-header p {
+        font-size: 11px;
+        color: var(--scanner-ink-3);
+        margin: 0;
+      }
+      .drawer-close {
+        background: none;
+        border: 1px solid var(--scanner-border);
+        cursor: pointer;
+        color: var(--scanner-ink-3);
+        width: 28px;
+        height: 28px;
+        border-radius: 6px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: background 0.15s;
+      }
+      .drawer-close:hover { background: var(--scanner-muted); }
+      .drawer-ip-hero {
+        padding: 16px 24px;
+        margin: 16px 16px 0;
+        background: linear-gradient(135deg, var(--scanner-primary), var(--scanner-primary-600));
+        border-radius: 10px;
+        color: var(--scanner-primary-foreground);
+      }
+      .drawer-ip-hero .label { font-size: 10px; opacity: 0.8; margin-bottom: 4px; }
+      .drawer-ip-hero .value {
+        font-size: 22px;
+        font-weight: 700;
+        font-family: var(--scanner-font-mono);
+        letter-spacing: 0.5px;
+      }
+      .drawer-ip-hero .meta { font-size: 11px; opacity: 0.7; margin-top: 4px; }
+      .drawer-body {
+        padding: 12px 24px;
+        flex: 1;
+        overflow-y: auto;
+      }
+      .drawer-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: var(--scanner-s-2);
+        padding: 10px 0;
+        border-bottom: 1px solid var(--scanner-border);
+      }
+      .drawer-row .label {
+        font-size: 12px;
+        color: var(--scanner-ink-2);
+        min-width: 72px;
+      }
+      .drawer-row .value {
+        text-align: right;
+        min-width: 0;
+        color: var(--scanner-ink);
+        font-size: 13px;
+      }
+      .drawer-row .value .scanner-mono { font-family: var(--scanner-font-mono); }
+      .drawer-row .value .sub {
+        font-size: 10px;
+        color: var(--scanner-ink-3);
+        margin-top: 2px;
+      }
+    </style>
+</head>
+<body class="min-h-screen font-sans antialiased">
+    <main>
+      <div data-viewport-mode="app-shell" class="bg-background text-foreground">
+        <!-- Sidebar -->
+        <aside data-shell="sidebar" class="flex flex-col" data-region="local-info">
+          <div class="p-4 border-b border-border">
+            <div class="flex items-center gap-2">
+              <div class="w-8 h-8 rounded-lg bg-primary text-primary-foreground flex items-center justify-center">
+                <i data-lucide="scan" class="w-4 h-4"></i>
+              </div>
+              <div>
+                <h1 class="text-sm font-semibold text-foreground">本机信息</h1>
+                <p class="text-xs text-muted-foreground">当前主机</p>
+              </div>
+            </div>
+          </div>
+
+          <div class="p-4">
+            <div class="local-info-card">
+              <div class="flex items-start justify-between mb-3">
+                <span class="text-xs opacity-90">本机 IP 地址</span>
+                <span id="local-prefix" class="text-[10px] px-1.5 py-0.5 rounded bg-white/20">/24</span>
+              </div>
+              <div id="local-ip" class="text-2xl font-semibold scanner-mono mb-4">-</div>
+              <div class="space-y-1.5">
+                <div class="info-row">
+                  <span><i data-lucide="wifi" style="width: 12px; height: 12px;"></i> 网关</span>
+                  <span id="local-gateway" class="scanner-mono">-</span>
+                </div>
+                <div class="info-row">
+                  <span><i data-lucide="hash" style="width: 12px; height: 12px;"></i> 子网掩码</span>
+                  <span id="local-netmask" class="scanner-mono">-</span>
+                </div>
+                <div class="info-row">
+                  <span><i data-lucide="radio" style="width: 12px; height: 12px;"></i> 广播地址</span>
+                  <span id="local-broadcast" class="scanner-mono">-</span>
+                </div>
+                <div class="info-row">
+                  <span><i data-lucide="activity" style="width: 12px; height: 12px;"></i> 主机数</span>
+                  <span id="local-host-count" class="scanner-mono">-</span>
+                </div>
+              </div>
+              <div class="info-divider space-y-1.5">
+                <div class="split-row"><span>主机名</span><span id="local-hostname">-</span></div>
+                <div class="split-row"><span>MAC 地址</span><span id="local-mac" class="scanner-mono">-</span></div>
+                <div class="split-row"><span>DNS</span><span id="local-dns" class="scanner-mono">-</span></div>
+                <div class="split-row"><span>子网段</span><span id="local-cidr" class="scanner-mono">-</span></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="px-4 pb-4 flex-1" data-region="adapter-list">
+            <div class="flex items-center justify-between mb-2">
+              <h2 class="text-sm font-semibold text-foreground">网卡选择</h2>
+              <span id="adapter-count" class="text-xs px-1.5 py-0.5 rounded bg-muted text-muted-foreground">0</span>
+            </div>
+            <div id="adapter-list" class="space-y-2">
+              <!-- adapters injected here -->
+            </div>
+            <p class="mt-3 text-[10px] text-muted-foreground">切换会清空已扫结果，请重新扫描当前网卡。</p>
+          </div>
+        </aside>
+
+        <!-- Main workspace -->
+        <div data-shell="main">
+          <!-- Top header -->
+          <header class="sticky top-0 z-10 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80 border-b border-border">
+            <div class="flex items-center justify-between gap-4 px-6 py-3">
+              <div class="flex items-center gap-3 min-w-0">
+                <div class="w-9 h-9 rounded-lg bg-primary text-primary-foreground flex items-center justify-center shrink-0">
+                  <i data-lucide="scan" class="w-5 h-5"></i>
+                </div>
+                <div class="min-w-0">
+                  <h1 class="text-base font-semibold text-foreground truncate">本地网络扫描工具</h1>
+                  <p class="text-xs text-muted-foreground">本地网络拓扑</p>
+                </div>
+              </div>
+
+              <div class="hidden sm:flex flex-1 max-w-md">
+                <div class="relative w-full">
+                  <i data-lucide="search" class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground"></i>
+                  <input id="search-input" type="text" placeholder="搜索 IP / 主机名 / MAC / 厂商" class="w-full rounded-md border border-input bg-input px-9 py-2 text-sm text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" />
+                </div>
+              </div>
+
+              <div class="flex items-center gap-2 shrink-0">
+                <button id="btn-search-mobile" class="sm:hidden inline-flex items-center justify-center w-9 h-9 rounded-md border border-border bg-card text-foreground hover:bg-muted transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                  <i data-lucide="search" class="w-4 h-4"></i>
+                </button>
+                <button id="btn-export" class="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium rounded-md border border-border bg-card text-foreground hover:bg-muted transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                  <i data-lucide="download" class="w-3.5 h-3.5"></i>
+                  <span class="hidden sm:inline">导出</span>
+                </button>
+              </div>
+            </div>
+          </header>
+
+          <!-- Scrollable content -->
+          <div data-scroll-region="primary" class="p-5 sm:p-7 space-y-6">
+            <!-- Scan controls -->
+            <section data-region="scan-controls" class="rounded-xl border border-border bg-card p-5 shadow-1">
+              <div class="flex flex-col lg:flex-row lg:items-center gap-4">
+                <div class="flex items-center gap-3 shrink-0">
+                  <button id="btn-start" class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium shadow-1 hover:bg-primary/90 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                    <i data-lucide="play" class="w-4 h-4 fill-current"></i>
+                    开始扫描
+                  </button>
+                  <button id="btn-stop" style="display:none;" class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-destructive text-destructive-foreground text-sm font-medium shadow-1 hover:opacity-90 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                    <i data-lucide="square" class="w-4 h-4 fill-current"></i>
+                    停止
+                  </button>
+                </div>
+                <div class="flex-1 min-w-0 flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
+                  <div class="inline-flex items-center rounded-md border border-border bg-background p-0.5 shrink-0">
+                    <button data-mode="quick" class="mode-btn px-3 py-1.5 text-xs font-medium rounded text-muted-foreground hover:bg-muted transition whitespace-nowrap">快速</button>
+                    <button data-mode="standard" class="mode-btn px-3 py-1.5 text-xs font-medium rounded bg-primary text-primary-foreground whitespace-nowrap">标准</button>
+                    <button data-mode="deep" class="mode-btn px-3 py-1.5 text-xs font-medium rounded text-muted-foreground hover:bg-muted transition whitespace-nowrap">深度</button>
+                    <button data-mode="ai" class="mode-btn px-3 py-1.5 text-xs font-medium rounded text-muted-foreground hover:bg-muted transition whitespace-nowrap">AI</button>
+                  </div>
+                  <div class="flex-1 min-w-0">
+                    <div class="relative">
+                      <i data-lucide="target" class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-primary"></i>
+                      <input id="scan-target" type="text" value="" class="w-full rounded-md border border-input bg-input pl-9 pr-16 py-2 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" />
+                      <span id="scan-host-count" class="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground scanner-mono">-</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div class="mt-4 space-y-2">
+                <div class="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                  <span class="scanner-mono">扫描范围 <span id="scan-range">-</span></span>
+                  <span>·</span>
+                  <span><span id="scan-hosts">-</span> 主机</span>
+                  <span>·</span>
+                  <span id="scan-mode">标准</span>
+                  <span>·</span>
+                  <span>发现 <span id="scan-found">0</span> 台</span>
+                  <span>·</span>
+                  <span><span id="scan-elapsed">0</span> 秒</span>
+                </div>
+                <div class="w-full h-1.5 bg-muted rounded-full overflow-hidden">
+                  <div id="scan-progress" class="progress-bar h-full bg-primary rounded-full" style="width: 0%"></div>
+                </div>
+              </div>
+
+              <!-- 扫描中动画 -->
+              <div id="scan-loading" class="hidden mt-4">
+                <div class="flex items-center gap-3 p-3 rounded-lg border" style="background:var(--scanner-primary-50); border-color:var(--scanner-primary-200);">
+                  <div class="relative w-7 h-7 shrink-0">
+                    <div class="absolute inset-0 rounded-full border-2 opacity-30" style="border-color:var(--scanner-primary);"></div>
+                    <div class="absolute inset-0 rounded-full border-2 border-t-transparent" style="border-color:var(--scanner-primary); animation: spin 1s linear infinite;"></div>
+                  </div>
+                  <div class="flex-1 min-w-0">
+                    <div class="text-sm font-medium" style="color:var(--scanner-primary);">正在扫描网络设备...</div>
+                    <div id="scan-loading-detail" class="text-xs text-muted-foreground mt-0.5">准备中</div>
+                  </div>
+                  <div id="scan-loading-pct" class="text-xl font-bold scanner-mono" style="color:var(--scanner-primary);">0%</div>
+                </div>
+              </div>
+            </section>
+
+            <!-- Mobile search -->
+            <section id="mobile-search-section" class="sm:hidden rounded-xl border border-border bg-card p-4 shadow-1" style="display:none;">
+              <div class="relative">
+                <i data-lucide="search" class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground"></i>
+                <input id="search-input-mobile" type="text" placeholder="搜索 IP / 主机名 / MAC / 厂商" class="w-full rounded-md border border-input bg-input px-9 py-2 text-sm text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" />
+              </div>
+            </section>
+
+            <!-- Scan summary -->
+            <section data-region="scan-summary" class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+              <div class="rounded-xl border border-border bg-card p-5 shadow-1 flex items-start gap-3">
+                <div class="w-9 h-9 rounded-lg bg-primary/10 text-primary flex items-center justify-center shrink-0">
+                  <i data-lucide="monitor" class="w-4 h-4"></i>
+                </div>
+                <div class="min-w-0">
+                  <p class="text-xs text-muted-foreground whitespace-nowrap">发现设备</p>
+                  <p class="text-xl font-semibold text-foreground"><span id="stat-devices">0</span> <span class="text-xs font-normal text-muted-foreground">(在线 <span id="stat-online">0</span>)</span></p>
+                </div>
+              </div>
+              <div class="rounded-xl border border-border bg-card p-5 shadow-1 flex items-start gap-3">
+                <div class="w-9 h-9 rounded-lg flex items-center justify-center shrink-0" style="background: color-mix(in srgb, var(--scanner-state-info) 10%, transparent); color: var(--scanner-state-info);">
+                  <i data-lucide="activity" class="w-4 h-4"></i>
+                </div>
+                <div class="min-w-0">
+                  <p class="text-xs text-muted-foreground whitespace-nowrap">平均延迟</p>
+                  <p class="text-xl font-semibold text-foreground scanner-mono"><span id="stat-latency">0.0</span> <span class="text-xs font-normal text-muted-foreground">ms</span></p>
+                  <p class="text-[10px] text-muted-foreground">耗时 <span id="stat-time">0</span> 秒</p>
+                </div>
+              </div>
+              <div class="rounded-xl border border-border bg-card p-5 shadow-1 flex items-start gap-3">
+                <div class="w-9 h-9 rounded-lg flex items-center justify-center shrink-0" style="background: color-mix(in srgb, var(--scanner-state-success) 10%, transparent); color: var(--scanner-state-success);">
+                  <i data-lucide="fingerprint" class="w-4 h-4"></i>
+                </div>
+                <div class="min-w-0">
+                  <p class="text-xs text-muted-foreground whitespace-nowrap">服务识别</p>
+                  <p class="text-xl font-semibold text-foreground"><span id="stat-fingerprints">0</span> <span class="text-xs font-normal text-muted-foreground">台</span></p>
+                </div>
+              </div>
+              <div class="rounded-xl border border-border bg-card p-5 shadow-1 flex items-start gap-3">
+                <div class="w-9 h-9 rounded-lg flex items-center justify-center shrink-0" style="background: color-mix(in srgb, var(--scanner-state-warning) 10%, transparent); color: var(--scanner-state-warning);">
+                  <i data-lucide="clipboard-list" class="w-4 h-4"></i>
+                </div>
+                <div class="min-w-0">
+                  <p class="text-xs text-muted-foreground whitespace-nowrap">待补证据</p>
+                  <p class="text-xl font-semibold text-foreground"><span id="stat-evidence">0</span> <span class="text-xs font-normal text-muted-foreground">台</span></p>
+                </div>
+              </div>
+            </section>
+
+            <!-- Tabbed: topology + device list -->
+            <section data-region="results" class="rounded-xl border border-border bg-card shadow-1 overflow-hidden">
+              <!-- Tab bar -->
+              <div class="flex items-center justify-between gap-3 px-5 pt-4 border-b border-border">
+                <div class="inline-flex items-center gap-1 shrink-0">
+                  <button id="tab-topology" class="tab-btn inline-flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium border-b-2 border-transparent text-muted-foreground hover:text-foreground transition">
+                    <i data-lucide="network" class="w-4 h-4"></i>
+                    拓扑图
+                  </button>
+                  <button id="tab-devicelist" class="tab-btn inline-flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium border-b-2 border-primary text-primary transition">
+                    <i data-lucide="list" class="w-4 h-4"></i>
+                    设备列表
+                  </button>
+                </div>
+                <div class="flex items-center gap-3 pb-2 overflow-hidden">
+                  <span id="result-meta" class="text-xs text-muted-foreground whitespace-nowrap">显示 <span id="device-count">0</span> 台 · <span id="device-cidr" class="scanner-mono">-</span></span>
+                  <span id="topo-legend" class="hidden sm:inline-flex items-center gap-1.5 text-[10px] text-muted-foreground whitespace-nowrap" style="display:none;">
+                    <span class="w-2.5 h-2.5 rounded-full" style="background:var(--scanner-primary);"></span>本机
+                    <span class="w-2.5 h-2.5 rounded-full ml-1.5" style="background:var(--scanner-state-success);"></span>在线
+                    <span class="w-2.5 h-2.5 rounded-full ml-1.5" style="background:var(--scanner-state-warning);"></span>未知
+                  </span>
+                  <div id="device-filters" class="inline-flex items-center rounded-md border border-border bg-background p-0.5" style="display:inline-flex;">
+                    <button data-filter="all" class="filter-btn px-3 py-1.5 text-xs font-medium rounded bg-primary text-primary-foreground whitespace-nowrap">全部</button>
+                    <button data-filter="online" class="filter-btn px-3 py-1.5 text-xs font-medium rounded text-muted-foreground hover:bg-muted transition whitespace-nowrap">在线</button>
+                    <button data-filter="services" class="filter-btn px-3 py-1.5 text-xs font-medium rounded text-muted-foreground hover:bg-muted transition whitespace-nowrap">有服务</button>
+                    <button data-filter="pending" class="filter-btn px-3 py-1.5 text-xs font-medium rounded text-muted-foreground hover:bg-muted transition whitespace-nowrap">待补证据</button>
+                    <button data-filter="unknown" class="filter-btn px-3 py-1.5 text-xs font-medium rounded text-muted-foreground hover:bg-muted transition whitespace-nowrap">未知</button>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Tab panel: topology -->
+              <div id="panel-topology" style="display:none;">
+                <div id="topology-container" style="position:relative; width:100%; min-height:300px; overflow:hidden;">
+                  <!-- 统计卡片 -->
+                  <div id="topo-stats" style="position:absolute; top:12px; left:12px; z-index:10; display:none;">
+                    <div class="flex items-center gap-2 px-3 py-2 rounded-lg border border-border bg-card/95 backdrop-blur shadow-1">
+                      <span class="text-sm font-semibold text-foreground">拓扑</span>
+                      <span class="text-xs text-muted-foreground"><span id="topo-stat-nodes" class="scanner-mono font-semibold text-foreground">0</span> 个节点</span>
+                      <span class="text-xs text-muted-foreground">在线 <span id="topo-stat-online" class="scanner-mono font-semibold" style="color:var(--scanner-state-success);">0</span></span>
+                      <span class="text-xs text-muted-foreground">服务 <span id="topo-stat-services" class="scanner-mono font-semibold text-foreground">0</span></span>
+                    </div>
+                  </div>
+
+                  <!-- 缩放控件 -->
+                  <div id="topo-zoom" style="position:absolute; bottom:12px; right:12px; z-index:10; display:none;">
+                    <div class="flex flex-col rounded-lg border border-border bg-card/95 backdrop-blur shadow-1 overflow-hidden">
+                      <button id="topo-zoom-in" class="w-8 h-8 flex items-center justify-center text-foreground hover:bg-muted transition" title="放大">
+                        <i data-lucide="plus" class="w-4 h-4"></i>
+                      </button>
+                      <div class="h-px bg-border"></div>
+                      <button id="topo-zoom-out" class="w-8 h-8 flex items-center justify-center text-foreground hover:bg-muted transition" title="缩小">
+                        <i data-lucide="minus" class="w-4 h-4"></i>
+                      </button>
+                      <div class="h-px bg-border"></div>
+                      <button id="topo-zoom-fit" class="w-8 h-8 flex items-center justify-center text-foreground hover:bg-muted transition" title="适应">
+                        <i data-lucide="maximize" class="w-4 h-4"></i>
+                      </button>
+                    </div>
+                  </div>
+
+                  <!-- 画布 -->
+                  <div id="topology-canvas" style="position:relative; width:100%; transform-origin: top left; transition: transform 0.2s ease;">
+                    <!-- SVG 连线层 -->
+                    <svg id="topology-edges" style="position:absolute; inset:0; width:100%; height:100%; pointer-events:none;" xmlns="http://www.w3.org/2000/svg"></svg>
+                    <!-- 节点层 -->
+                    <div id="topology-nodes" style="position:relative; width:100%; height:100%;"></div>
+                  </div>
+
+                  <!-- 空状态 -->
+                  <div id="topo-empty" style="position:absolute; inset:0; display:flex; align-items:center; justify-content:center; flex-direction:column; text-align:center; color:var(--scanner-muted-foreground);">
+                    <div style="width:48px; height:48px; border-radius:50%; background:var(--scanner-muted); display:flex; align-items:center; justify-content:center; margin-bottom:12px;">
+                      <i data-lucide="network" style="width:24px; height:24px;"></i>
+                    </div>
+                    <p style="font-size:14px; font-weight:500; color:var(--scanner-ink); margin-bottom:4px;">暂无拓扑数据</p>
+                    <p style="font-size:12px;">点击开始扫描生成网络拓扑</p>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Tab panel: device list -->
+              <div id="panel-devicelist">
+                <div data-table-wrap>
+                  <table data-table>
+                    <thead>
+                      <tr class="border-b border-border bg-muted/50 text-left text-xs text-muted-foreground">
+                        <th class="px-4 py-3 font-medium">IP 地址</th>
+                        <th class="px-4 py-3 font-medium">类型</th>
+                        <th class="px-4 py-3 font-medium">状态</th>
+                        <th class="px-4 py-3 font-medium">主机 / MAC</th>
+                        <th class="px-4 py-3 font-medium">服务</th>
+                        <th class="px-4 py-3 font-medium">延迟</th>
+                      </tr>
+                    </thead>
+                    <tbody id="device-table-body" class="text-sm">
+                    </tbody>
+                  </table>
+                </div>
+                <div id="empty-state" style="display:none;" class="flex-col items-center justify-center p-10 text-center text-muted-foreground">
+                  <div class="w-12 h-12 rounded-full bg-muted flex items-center justify-center mb-3">
+                    <i data-lucide="search" class="w-6 h-6 text-muted-foreground"></i>
+                  </div>
+                  <p class="text-sm font-medium text-foreground mb-1">暂无扫描结果</p>
+                  <p class="text-xs">点击开始扫描发现本地网络设备。</p>
+                </div>
+              </div>
+            </section>
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <!-- 设备详情抽屉 -->
+    <div id="device-detail-overlay" class="drawer-backdrop" style="display:none;">
+      <div id="device-detail-drawer" class="drawer-panel">
+        <div class="drawer-header">
+          <div class="drawer-top">
+            <div id="detail-icon-wrap" style="width:40px; height:40px; border-radius:10px; display:flex; align-items:center; justify-content:center; background:var(--scanner-state-info-bg); color:var(--scanner-state-info);">
+              <i data-lucide="monitor" style="width:20px; height:20px;"></i>
+            </div>
+            <button id="detail-close" class="drawer-close">
+              <i data-lucide="x" style="width:16px; height:16px;"></i>
+            </button>
+          </div>
+          <h3 id="detail-title">设备详情</h3>
+          <p id="detail-subtitle">-</p>
+        </div>
+        <div id="detail-ip-hero" class="drawer-ip-hero">
+          <div class="label">IP 地址</div>
+          <div id="detail-ip-value" class="value">-</div>
+          <div id="detail-ip-meta" class="meta">-</div>
+        </div>
+        <div id="detail-body" class="drawer-body">
+        </div>
+      </div>
+    </div>
+
+    <script>lucide.createIcons();</script>
+    <script src="app.js"></script>
+
+    <style id="critical-layout">
+      :root { --scanner-sidebar-width: 260px; }
+      [data-viewport-mode="app-shell"] { display: flex; height: 100vh; overflow: hidden; }
+      [data-shell="sidebar"] {
+        position: fixed;
+        inset: 0 auto 0 0;
+        width: var(--scanner-sidebar-width);
+        overflow-y: auto;
+        overflow-x: hidden;
+        border-right: 1px solid var(--scanner-border);
+        background: var(--scanner-card);
+        z-index: 40;
+      }
+      [data-shell="main"] {
+        margin-left: var(--scanner-sidebar-width);
+        flex: 1 1 0%;
+        min-width: 0;
+        height: 100vh;
+        display: flex;
+        flex-direction: column;
+      }
+      [data-scroll-region="primary"] {
+        flex: 1 1 0%;
+        min-height: 0;
+        overflow-y: auto;
+        overflow-x: hidden;
+      }
+      [data-table-wrap] { min-width: 0; overflow-x: auto; }
+      [data-table] { min-width: 680px; width: 100%; border-collapse: collapse; }
+      .scanner-mono { font-family: var(--scanner-font-mono); }
+
+      /* 侧栏滚动条优化 */
+      [data-shell="sidebar"]::-webkit-scrollbar { width: 4px; }
+      [data-shell="sidebar"]::-webkit-scrollbar-thumb { background: var(--scanner-border); border-radius: 2px; }
+      [data-shell="sidebar"]::-webkit-scrollbar-track { background: transparent; }
+
+      /* 主内容滚动条优化 */
+      [data-scroll-region="primary"]::-webkit-scrollbar { width: 6px; }
+      [data-scroll-region="primary"]::-webkit-scrollbar-thumb { background: var(--scanner-border); border-radius: 3px; }
+      [data-scroll-region="primary"]::-webkit-scrollbar-track { background: transparent; }
+
+      /* 表格水平滚动条优化 */
+      [data-table-wrap]::-webkit-scrollbar { height: 4px; }
+      [data-table-wrap]::-webkit-scrollbar-thumb { background: var(--scanner-border); border-radius: 2px; }
+      [data-table-wrap]::-webkit-scrollbar-track { background: transparent; }
+
+      @media (max-width: 768px) {
+        :root { --scanner-sidebar-width: 0px; }
+        [data-shell="sidebar"] { display: none; }
+        [data-shell="main"] { margin-left: 0; }
+      }
+    </style>
+</body>
+</html>

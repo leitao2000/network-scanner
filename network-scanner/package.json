@@ -1,0 +1,59 @@
+{
+  "name": "local-network-scanner",
+  "version": "1.0.0",
+  "description": "本地网络扫描工具 - Electron 桌面应用",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "test": "node test-scanner.js",
+    "scan": "node scan-online-ips.js",
+    "pack": "electron-builder --win",
+    "dist": "electron-builder --win --publish=never"
+  },
+  "keywords": ["network", "scanner", "electron", "local"],
+  "author": "TraeDesign",
+  "license": "MIT",
+  "build": {
+    "appId": "com.traedesign.local-network-scanner",
+    "productName": "本地网络扫描工具",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "scanner.js",
+      "colors_and_type.css",
+      "pages/**/*",
+      "assets/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        },
+        {
+          "target": "portable",
+          "arch": ["x64"]
+        }
+      ],
+      "signAndEditExecutable": false
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "本地网络扫描工具"
+    },
+    "portable": {
+      "artifactName": "本地网络扫描工具-${version}-portable.exe"
+    }
+  },
+  "devDependencies": {
+    "electron": "^31.0.0",
+    "electron-builder": "^25.0.0"
+  }
+}

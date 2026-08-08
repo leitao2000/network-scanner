@@ -1,0 +1,100 @@
+/* Network Scanner — color, type, and radius tokens */
+
+:root {
+  /* Primary hue: cool blue (engineering / tooling tone) */
+  --scanner-primary-h: 217;
+  --scanner-primary-s: 91%;
+  --scanner-primary-l: 46%;
+
+  --scanner-primary: hsl(var(--scanner-primary-h), var(--scanner-primary-s), var(--scanner-primary-l));
+  --scanner-primary-foreground: #ffffff;
+  --scanner-primary-50: hsl(var(--scanner-primary-h), var(--scanner-primary-s), 97%);
+  --scanner-primary-100: hsl(var(--scanner-primary-h), var(--scanner-primary-s), 92%);
+  --scanner-primary-200: hsl(var(--scanner-primary-h), var(--scanner-primary-s), 82%);
+  --scanner-primary-600: hsl(var(--scanner-primary-h), var(--scanner-primary-s), 40%);
+
+  /* Neutral surfaces */
+  --scanner-background: #f6f7f9;
+  --scanner-foreground: #0f172a;
+  --scanner-card: #ffffff;
+  --scanner-card-foreground: #0f172a;
+  --scanner-popover: #ffffff;
+  --scanner-popover-foreground: #0f172a;
+  --scanner-muted: #f1f5f9;
+  --scanner-muted-foreground: #64748b;
+  --scanner-border: #e2e8f0;
+  --scanner-input: #ffffff;
+  --scanner-ring: var(--scanner-primary);
+
+  /* Text */
+  --scanner-ink: #0f172a;
+  --scanner-ink-2: #475569;
+  --scanner-ink-3: #94a3b8;
+  --scanner-line: #e2e8f0;
+
+  /* Radius */
+  --scanner-radius-xs: 2px;
+  --scanner-radius-sm: 4px;
+  --scanner-radius-md: 8px;
+  --scanner-radius-lg: 12px;
+  --scanner-radius-xl: 16px;
+  --scanner-radius-pill: 999px;
+
+  /* Shadows */
+  --scanner-shadow-1: 0 1px 2px rgba(15, 23, 42, 0.05), 0 1px 1px rgba(15, 23, 42, 0.03);
+  --scanner-shadow-2: 0 4px 12px rgba(15, 23, 42, 0.05);
+  --scanner-shadow-3: 0 16px 40px rgba(15, 23, 42, 0.05);
+
+  /* Semantic state colors */
+  --scanner-state-success: #16a34a;
+  --scanner-state-success-bg: #dcfce7;
+  --scanner-state-warning: #f59e0b;
+  --scanner-state-warning-bg: #fef3c7;
+  --scanner-state-error: #ef4444;
+  --scanner-state-error-bg: #fee2e2;
+  --scanner-state-info: #3b82f6;
+  --scanner-state-info-bg: #dbeafe;
+
+  /* Typography */
+  --scanner-font-sans: Inter, "PingFang SC", "Microsoft YaHei", "Noto Sans SC", system-ui, sans-serif;
+  --scanner-font-mono: "SF Mono", "JetBrains Mono", "Fira Code", "Cascadia Code", Consolas, monospace;
+
+  /* Spacing */
+  --scanner-s-1: 4px;
+  --scanner-s-2: 8px;
+  --scanner-s-3: 12px;
+  --scanner-s-4: 16px;
+  --scanner-s-5: 20px;
+  --scanner-s-6: 24px;
+  --scanner-s-7: 32px;
+  --scanner-s-8: 48px;
+}
+
+/* Dark mode tokens (optional, but defined for completeness) */
+html.dark {
+  --scanner-background: #0b0d12;
+  --scanner-foreground: #f1f5f9;
+  --scanner-card: #12151c;
+  --scanner-card-foreground: #f1f5f9;
+  --scanner-popover: #1a1d25;
+  --scanner-popover-foreground: #f1f5f9;
+  --scanner-muted: #1e232d;
+  --scanner-muted-foreground: #94a3b8;
+  --scanner-border: #272b36;
+  --scanner-input: #1a1d25;
+  --scanner-line: #272b36;
+  --scanner-ink: #f1f5f9;
+  --scanner-ink-2: #94a3b8;
+  --scanner-ink-3: #64748b;
+  --scanner-shadow-1: 0 1px 2px rgba(0, 0, 0, 0.25), 0 1px 1px rgba(0, 0, 0, 0.15);
+  --scanner-shadow-2: 0 4px 12px rgba(0, 0, 0, 0.35);
+  --scanner-shadow-3: 0 16px 40px rgba(0, 0, 0, 0.45);
+}
+
+body {
+  font-family: var(--scanner-font-sans);
+  color: var(--scanner-ink);
+  background-color: var(--scanner-background);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
