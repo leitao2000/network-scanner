@@ -91,20 +91,31 @@
     scanFound: document.getElementById('scan-found'),
     scanElapsed: document.getElementById('scan-elapsed'),
     scanProgress: document.getElementById('scan-progress'),
+    scanPctText: document.getElementById('scan-pct-text'),
     btnStart: document.getElementById('btn-start'),
     btnStop: document.getElementById('btn-stop'),
     btnExport: document.getElementById('btn-export'),
     statDevices: document.getElementById('stat-devices'),
     statOnline: document.getElementById('stat-online'),
+    statCoveragePct: document.getElementById('stat-coverage-pct'),
+    statCoverageBar: document.getElementById('stat-coverage-bar'),
     statLatency: document.getElementById('stat-latency'),
+    statLatencyMin: document.getElementById('stat-latency-min'),
+    statLatencyMax: document.getElementById('stat-latency-max'),
+    statLatencyLevel: document.getElementById('stat-latency-level'),
     statTime: document.getElementById('stat-time'),
     statFingerprints: document.getElementById('stat-fingerprints'),
+    statServicesTotal: document.getElementById('stat-services-total'),
     statEvidence: document.getElementById('stat-evidence'),
+    statEvidenceBadge: document.getElementById('stat-evidence-badge'),
     deviceCount: document.getElementById('device-count'),
     deviceCidr: document.getElementById('device-cidr'),
     deviceTableBody: document.getElementById('device-table-body'),
     emptyState: document.getElementById('empty-state'),
-    searchInput: document.getElementById('search-input')
+    searchInput: document.getElementById('search-input'),
+    sideStatHistory: document.getElementById('side-stat-history'),
+    sideStatDevicesEver: document.getElementById('side-stat-devices-ever'),
+    sideStatAvgRate: document.getElementById('side-stat-avg-rate')
   };
 
   function setText(el, text) {
@@ -288,37 +299,88 @@
     els.deviceTableBody.innerHTML = filtered.map(device => {
       const icon = getDeviceIcon(device);
       const iconColor = device.type === '本机' ? 'bg-primary/10 text-primary' : '';
-      const iconStyle = device.type === '本机' ? '' : `background: color-mix(in srgb, var(--scanner-state-info) 10%, transparent); color: var(--scanner-state-info);`;
+      const iconStyle = device.type === '本机'
+        ? 'background: linear-gradient(135deg, var(--scanner-primary-100), var(--scanner-primary-50)); color: var(--scanner-primary);'
+        : 'background: linear-gradient(135deg, var(--scanner-state-info-100), var(--scanner-muted)); color: var(--scanner-state-info);';
+
       const badges = getDeviceTypeBadges(device);
-      const badgeHtml = badges.map(b => `<span class="text-xs px-2 py-0.5 rounded ${b.cls}">${b.text}</span>`).join('');
-      const statusHtml = `<span class="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full" style="background: var(--scanner-state-success-bg); color: var(--scanner-state-success);"><span class="w-1.5 h-1.5 rounded-full bg-current"></span>${device.status}</span>`;
+      const badgeHtml = badges.map(b => `<span class="inline-flex items-center text-[11px] font-bold px-2.5 py-1 rounded-lg ${b.cls}">${b.text}</span>`).join(' ');
+
+      // 状态徽章：按状态值上色 + 更大尺寸
+      let statusBg, statusColor;
+      if (device.status === '在线') { statusBg = 'var(--scanner-state-success-100)'; statusColor = 'var(--scanner-state-success)'; }
+      else if (device.status === '离线') { statusBg = 'var(--scanner-muted)'; statusColor = 'var(--scanner-ink-3)'; }
+      else { statusBg = 'var(--scanner-state-warning-100)'; statusColor = 'var(--scanner-state-warning)'; }
+      const statusHtml = `
+        <span class="inline-flex items-center gap-1.5 text-[11.5px] font-bold px-3 py-1.5 rounded-full shadow-1" style="background:${statusBg}; color:${statusColor};">
+          <span class="w-2 h-2 rounded-full bg-current animate-pulse"></span>${device.status}
+        </span>`;
+
       const hostLine = device.hostname || (device.type === '本机' ? localInfo?.hostname : device.type || '-');
       const macLine = device.mac ? device.mac.toUpperCase() : '—';
-      const latency = device.latency != null ? `${device.latency} ms` : '—';
-      const services = device.services && device.services.length ? `${device.services.length} 个` : '—';
+
+      // 延迟：按数值上色 + 胶囊
+      let latHtml;
+      if (device.latency != null) {
+        const lat = device.latency;
+        let lbg, lcol;
+        if (lat < 50)      { lbg = 'var(--scanner-state-success-100)'; lcol = 'var(--scanner-state-success)'; }
+        else if (lat < 150){ lbg = 'var(--scanner-state-info-100)';    lcol = 'var(--scanner-state-info)'; }
+        else if (lat < 300){ lbg = 'var(--scanner-state-warning-100)'; lcol = 'var(--scanner-state-warning)'; }
+        else               { lbg = 'var(--scanner-state-error-100)';   lcol = 'var(--scanner-state-error)'; }
+        latHtml = `<span class="inline-flex items-center px-3 py-1.5 rounded-lg text-[12px] font-black scanner-mono shadow-1" style="background:${lbg}; color:${lcol};">${lat.toFixed(0)} <span class="text-[9.5px] ml-0.5 font-semibold opacity-80">ms</span></span>`;
+      } else latHtml = '<span class="text-muted-foreground text-[12px] font-semibold">—</span>';
+
+      // 服务：数量胶囊 + 端口预览
+      let svcHtml;
+      if (device.services && device.services.length) {
+        const total = device.services.length;
+        const topPorts = device.services
+          .slice(0, 2)
+          .map(s => typeof s === 'object' ? s.port : String(s).match(/(\d+)\s*\/?([A-Za-z]*)/)?.[1] || s)
+          .join(', ');
+        const more = total > 2 ? `+${total - 2}` : '';
+        svcHtml = `
+          <div class="flex flex-col gap-1">
+            <span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg font-black text-[12px] shadow-1" style="background:var(--scanner-state-success-100); color:var(--scanner-state-success);">
+              <i data-lucide="layers" class="w-3 h-3"></i>
+              ${total} 个
+            </span>
+            ${topPorts ? `<span class="text-[10.5px] font-semibold scanner-mono text-muted-foreground leading-none">${topPorts}${more ? ` ${more}` : ''}</span>` : ''}
+          </div>`;
+      } else svcHtml = '<span class="text-muted-foreground text-[12px] font-semibold">—</span>';
+
       return `
-        <tr class="border-b border-border hover:bg-muted/40 transition device-row-enter" data-ip="${device.ip}" style="cursor:pointer;">
-          <td class="px-4 py-3 align-middle">
-            <div class="flex items-center gap-2">
-              <div class="w-6 h-6 rounded flex items-center justify-center ${iconColor}" style="${iconStyle}">
-                <i data-lucide="${icon}" class="w-3.5 h-3.5"></i>
+        <tr class="border-b border-border hover:bg-muted/50 transition device-row-enter" data-ip="${device.ip}" style="cursor:pointer;">
+          <td class="px-5 py-4 align-middle">
+            <div class="flex items-center gap-2.5">
+              <div class="w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${iconColor}" style="${iconStyle}">
+                <i data-lucide="${icon}" class="w-4.5 h-4.5"></i>
               </div>
-              <span class="font-medium scanner-mono text-foreground">${device.ip}</span>
+              <div class="min-w-0">
+                <span class="block text-[13px] font-bold scanner-mono text-foreground leading-none">${device.ip}</span>
+                ${device.manufacturer ? `<span class="block text-[10.5px] text-muted-foreground mt-1 leading-none truncate" style="max-width:160px;">${device.manufacturer}</span>` : ''}
+              </div>
             </div>
           </td>
-          <td class="px-4 py-3 align-middle">${badgeHtml}</td>
-          <td class="px-4 py-3 align-middle">${statusHtml}</td>
-          <td class="px-4 py-3 align-middle">
-            <div class="text-foreground">${hostLine}</div>
-            <div class="text-xs scanner-mono text-muted-foreground">${macLine}</div>
+          <td class="px-5 py-4 align-middle">${badgeHtml || '<span class="text-[11px] text-muted-foreground font-semibold">未知</span>'}</td>
+          <td class="px-5 py-4 align-middle">${statusHtml}</td>
+          <td class="px-5 py-4 align-middle">
+            <div class="min-w-0">
+              <div class="text-[13px] font-bold text-foreground truncate leading-tight" style="max-width:220px;">${hostLine}</div>
+              <div class="text-[10.5px] scanner-mono text-muted-foreground mt-1 leading-tight">${macLine}</div>
+            </div>
           </td>
-          <td class="px-4 py-3 align-middle text-muted-foreground">${services}</td>
-          <td class="px-4 py-3 align-middle"><span class="scanner-mono text-foreground">${latency}</span></td>
+          <td class="px-5 py-4 align-middle">${svcHtml}</td>
+          <td class="px-5 py-4 align-middle">${latHtml}</td>
         </tr>
       `;
     }).join('');
     lucide.createIcons();
     renderTopology();
+
+    // 同步侧栏「扫描概览」三小卡数据
+    refreshSidebarOverviewStats();
   }
 
   // ── 网络拓扑图渲染（层级卡片式） ──────────────────
@@ -514,12 +576,12 @@
       }
     }
 
-    // 渲染卡片
-    const nodeWidth = 180;
-    const nodeHeight = 90;
-    const layerGap = 60;
-    const nodeGap = 20;
-    const padding = 40;
+    // 渲染卡片（放大尺寸，保证 IP/类型/图标/主机名/厂商/MAC/状态 全部完整显示）
+    const nodeWidth = 220;       // 原 180 → 220，避免横向被挤压后文字缩太小
+    const nodeHeight = 120;      // 原 90 → 120，至少容纳：图标行 + badges + MAC行 + 状态行
+    const layerGap = 70;         // 原 60 → 70，卡片变大后层级间距略增防重叠
+    const nodeGap = 22;          // 原 20 → 22，相邻卡片间距更安全
+    const padding = 48;
 
     const layerHeights = layers.map(layer => {
       const count = layer.length;
@@ -534,6 +596,18 @@
 
     canvas.style.width = canvasWidth + 'px';
     canvas.style.height = canvasHeight + 'px';
+
+    // 让容器、节点层、SVG层都使用明确的实际像素尺寸，
+    // 保证父 div 被内容完全撑大，不会因 % 高度 + overflow 而裁剪
+    nodesEl.style.width = canvasWidth + 'px';
+    nodesEl.style.height = canvasHeight + 'px';
+    edgesEl.setAttribute('width', canvasWidth);
+    edgesEl.setAttribute('height', canvasHeight);
+    edgesEl.style.width = canvasWidth + 'px';
+    edgesEl.style.height = canvasHeight + 'px';
+    if (container) {
+      container.style.minHeight = (canvasHeight + 60) + 'px';
+    }
 
     // 存储节点位置用于连线
     const nodePositions = {};
@@ -562,19 +636,20 @@
     // 初始化拖拽平移
     initTopoPan(container, canvas);
 
-    // 计算居中偏移
+    // 容器已改为自适应撑大（非固定高度裁剪）：
+    // 1) 仅当水平方向不够宽时才做缩小，保证不横向溢出；
+    // 2) 垂直方向不再用 containerHeight 计算居中（避免容器很大时内容被推到屏幕外），
+    //    保持 Y=0 让布局自然从顶部开始，用户可自然向下滚动查看全部节点。
     topoScale = 1;
     const freshContainer = document.getElementById('topology-container');
     if (freshContainer) {
       const containerWidth = freshContainer.clientWidth;
-      const containerHeight = freshContainer.clientHeight;
-      const scale = Math.min(1, Math.min(
-        (containerWidth - 20) / canvasWidth,
-        (containerHeight - 20) / canvasHeight
-      ));
-      topoScale = Math.max(0.5, scale);
+      // 仅基于宽度计算缩放；最小 0.75 保证 220×120 卡片缩完后仍约 165×90，
+      // 文字 12px → 9px，IP/主机名/MAC/状态均能完整识别不糊
+      const hScale = (containerWidth - 40) / canvasWidth;
+      topoScale = Math.max(0.75, Math.min(1, hScale));
       topoPan.x = Math.max(0, (containerWidth - canvasWidth * topoScale) / 2);
-      topoPan.y = Math.max(0, (containerHeight - canvasHeight * topoScale) / 2);
+      topoPan.y = 20; // 仅保留 20px 顶部边距，避免推到太下
     }
 
     const freshCanvas = document.getElementById('topology-canvas');
@@ -632,12 +707,12 @@
       }
     });
 
-    // 鼠标滚轮缩放
+    // 鼠标滚轮缩放（下限 0.75，保证卡片内容始终可读）
     curContainer.addEventListener('wheel', (e) => {
       if (e.target.closest('.topo-node-card')) return;
       e.preventDefault();
       const delta = e.deltaY > 0 ? -0.1 : 0.1;
-      applyTopoScale(Math.max(0.5, Math.min(2, topoScale + delta)));
+      applyTopoScale(Math.max(0.75, Math.min(2, topoScale + delta)));
       applyTopoTransform(curCanvas);
     }, { passive: false });
   }
@@ -689,53 +764,64 @@
     else if (device.type?.includes('IoT')) iconName = 'cpu';
     else iconName = 'box';
 
-    // 属性徽章
+    // 属性徽章（最多只显示 1 个，避免 3 个 badge 折行导致高度不够）
     const badges = [];
     if (isGateway) badges.push('路由器');
-    if (device.isPrivate) badges.push('私有地址');
-    if (device.manufacturer) badges.push(device.manufacturer);
+    if (device.isPrivate) badges.push('私有');
+    if (device.manufacturer) {
+      // 厂商标过长时截断，避免横向溢出导致换行
+      const short = device.manufacturer.length > 8
+        ? device.manufacturer.slice(0, 7) + '…'
+        : device.manufacturer;
+      badges.push(short);
+    }
+    const displayBadges = badges.slice(0, 1);
 
     // 状态行
     const statusDotColor = isOnline ? 'var(--scanner-state-success)' : 'var(--scanner-state-warning)';
     const statusText = isOnline ? '在线' : (device.status || '未知');
-    const latencyText = device.latency != null && device.latency >= 0 ? `${device.latency.toFixed(1)} ms` : '';
+    const latencyText = device.latency != null && device.latency >= 0 ? `${device.latency.toFixed(0)}ms` : '';
 
-    const badgesHtml = badges.length > 0
-      ? badges.map(b => `<span style="font-size:9px; padding:1px 5px; border-radius:3px; background:var(--scanner-muted); color:var(--scanner-ink-2);">${b}</span>`).join(' ')
+    const badgesHtml = displayBadges.length > 0
+      ? displayBadges.map(b => `<span style="font-size:9px; padding:1px 5px; border-radius:3px; background:var(--scanner-muted); color:var(--scanner-ink-2); white-space:nowrap;">${b}</span>`).join(' ')
       : '';
 
     const macHtml = device.mac
-      ? `<span style="font-size:10px; color:var(--scanner-ink-3); font-family:var(--scanner-font-mono);">MAC ${device.mac}</span>`
+      ? `<span style="font-size:9.5px; line-height:1.3; color:var(--scanner-ink-3); font-family:var(--scanner-font-mono); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">MAC ${device.mac}</span>`
       : '';
 
     const statusHtml = isInternet ? '' : `
-      <div style="display:flex; align-items:center; gap:6px; font-size:10px;">
+      <div style="display:flex; align-items:center; gap:5px; font-size:9.5px; line-height:1.3;">
         <span style="display:inline-flex; align-items:center; gap:3px;">
-          <span style="width:5px; height:5px; border-radius:50%; background:${statusDotColor}; display:inline-block;"></span>
+          <span style="width:5px; height:5px; border-radius:50%; background:${statusDotColor}; display:inline-block; flex-shrink:0;"></span>
           <span style="color:${statusDotColor};">${statusText}</span>
         </span>
         ${latencyText ? `<span style="color:var(--scanner-ink-3);">· ${latencyText}</span>` : ''}
       </div>
     `;
 
+    // 关键修复：
+    // 1) 去掉 overflow:hidden —— 不再裁剪内部内容
+    // 2) 固定 height:${h}px 仍保留（布局计算依赖），但改为 min-height 并允许内容超一点时自然超出
+    // 3) 内边距略收紧，避免浪费空间
     return `
-      <div class="topo-node-card" data-topo-ip="${device.ip || ''}" style="position:absolute; left:${x}px; top:${y}px; width:${w}px; height:${h}px; background:${bgColor}; border:1px solid ${borderColor}; border-radius:10px; box-shadow:0 2px 8px rgba(0,0,0,0.08); overflow:hidden; cursor:pointer; transition: box-shadow 0.2s; user-select:none;" onmouseover="this.style.boxShadow='0 4px 16px rgba(0,0,0,0.12)'" onmouseout="this.style.boxShadow='0 2px 8px rgba(0,0,0,0.08)'">
-        <div style="padding:10px 12px;">
-          <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:6px;">
-            <span style="font-size:12px; font-weight:600; font-family:var(--scanner-font-mono); color:${textColor};">${device.ip || '?'}</span>
-            <span style="font-size:9px; padding:2px 6px; border-radius:4px; background:${badgeColor}; color:${badgeTextColor}; font-weight:500;">${typeLabel}</span>
+      <div class="topo-node-card" data-topo-ip="${device.ip || ''}" style="position:absolute; left:${x}px; top:${y}px; width:${w}px; min-height:${h}px; background:${bgColor}; border:1px solid ${borderColor}; border-radius:10px; box-shadow:0 2px 8px rgba(0,0,0,0.08); overflow:visible; cursor:pointer; transition: box-shadow 0.2s; user-select:none; box-sizing:border-box;" onmouseover="this.style.boxShadow='0 4px 16px rgba(0,0,0,0.12)'" onmouseout="this.style.boxShadow='0 2px 8px rgba(0,0,0,0.08)'">
+        <div style="padding:8px 10px; box-sizing:border-box;">
+          <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:5px; gap:6px;">
+            <span style="font-size:12px; font-weight:600; font-family:var(--scanner-font-mono); color:${textColor}; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0; flex:1;">${device.ip || '?'}</span>
+            <span style="font-size:9px; padding:2px 6px; border-radius:4px; background:${badgeColor}; color:${badgeTextColor}; font-weight:500; white-space:nowrap; flex-shrink:0;">${typeLabel}</span>
           </div>
-          <div style="display:flex; align-items:center; gap:8px; margin-bottom:${isInternet ? '0' : '4px'};">
-            <div style="width:26px; height:26px; border-radius:6px; background:${iconBg}; display:flex; align-items:center; justify-content:center; flex-shrink:0;">
-              <i data-lucide="${iconName}" style="width:14px; height:14px; color:${iconColor};"></i>
+          <div style="display:flex; align-items:flex-start; gap:7px; margin-bottom:${isInternet ? '0' : '4px'};">
+            <div style="width:24px; height:24px; border-radius:5px; background:${iconBg}; display:flex; align-items:center; justify-content:center; flex-shrink:0;">
+              <i data-lucide="${iconName}" style="width:13px; height:13px; color:${iconColor};"></i>
             </div>
             <div style="flex:1; min-width:0;">
-              <div style="font-size:11px; color:${textColor}; font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${device.hostname || device.type || '未知设备'}</div>
-              ${badgesHtml ? `<div style="display:flex; gap:3px; margin-top:2px; flex-wrap:wrap;">${badgesHtml}</div>` : ''}
+              <div style="font-size:11.5px; color:${textColor}; font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; line-height:1.3;">${device.hostname || device.type || '未知设备'}</div>
+              ${badgesHtml ? `<div style="display:flex; gap:3px; margin-top:3px; overflow:hidden;">${badgesHtml}</div>` : ''}
             </div>
           </div>
           ${isInternet ? '' : `
-            <div style="display:flex; flex-direction:column; gap:2px; margin-top:6px; padding-top:6px; border-top:1px solid ${borderColor};">
+            <div style="display:flex; flex-direction:column; gap:3px; margin-top:5px; padding-top:5px; border-top:1px solid ${borderColor};">
               ${macHtml}
               ${statusHtml}
             </div>
@@ -753,7 +839,7 @@
     svg.setAttribute('viewBox', `0 0 ${canvasWidth} ${canvasHeight}`);
 
     const parts = [];
-    const nodeHeight = 90;
+    const nodeHeight = 120; // 与 renderTopology 节点卡片实际高度保持一致
 
     // 辅助：画一条贝塞尔曲线
     function drawEdge(srcPos, dstPos, isDashed, color, opacity) {
@@ -827,9 +913,9 @@
     svg.innerHTML = parts.join('');
   }
 
-  // 缩放
+  // 缩放（下限 0.75，保证节点卡片 IP/主机名/MAC/状态等文字能完整识别）
   function applyTopoScale(scale) {
-    topoScale = Math.max(0.5, Math.min(2, scale));
+    topoScale = Math.max(0.75, Math.min(2, scale));
     const canvas = document.getElementById('topology-canvas');
     if (canvas) {
       applyTopoTransform(canvas);
@@ -856,13 +942,111 @@
     const latencies = devices.filter(d => d.latency != null).map(d => d.latency);
     const avg = latencies.length ? (latencies.reduce((a, b) => a + b, 0) / latencies.length).toFixed(1) : '0.0';
     const withServices = devices.filter(d => d.services && d.services.length > 0).length;
-    const pending = devices.filter(d => !d.mac).length;
+    const servicesTotal = devices.reduce((n, d) => n + (d.services ? d.services.length : 0), 0);
+
+    // 证据缺失的细分（MAC/厂商/主机名/端口）
+    const missingMac = devices.filter(d => !d.mac).length;
+    const missingVendor = devices.filter(d => !d.manufacturer).length;
+    const missingHostname = devices.filter(d => !d.hostname).length;
+    const missingPorts = devices.filter(d => !d.services || d.services.length === 0).length;
+    const pending = devices.length === 0 ? 0 : Math.max(missingMac, missingVendor, missingHostname, missingPorts);
 
     setText(els.statDevices, devices.length.toString());
     setText(els.statOnline, online.toString());
     setText(els.statLatency, avg);
     setText(els.statFingerprints, withServices.toString());
     setText(els.statEvidence, pending.toString());
+
+    // ── 汇总卡新增字段 ──────────────────────────────────────
+    // Card1: 扫描完成度
+    const totalHostsN = parseInt(els.scanHosts ? (els.scanHosts.textContent || '0') : '0', 10) || 0;
+    const coveragePct = totalHostsN > 0
+      ? Math.min(100, Math.round((devices.length / totalHostsN) * 100))
+      : (devices.length > 0 ? 100 : 0);
+    setText(els.statCoveragePct, coveragePct + '%');
+    if (els.statCoverageBar) els.statCoverageBar.style.width = coveragePct + '%';
+
+    // Card2: 最快/最慢延迟 + 等级徽章
+    if (latencies.length > 0) {
+      const mn = Math.min(...latencies);
+      const mx = Math.max(...latencies);
+      setText(els.statLatencyMin, mn.toFixed(0));
+      setText(els.statLatencyMax, mx.toFixed(0));
+      if (els.statLatencyLevel) {
+        const avgNum = parseFloat(avg) || 0;
+        let label, colorBg, colorFg;
+        if (avgNum < 50)       { label = '极速'; colorBg = 'var(--scanner-state-success-100)'; colorFg = 'var(--scanner-state-success)'; }
+        else if (avgNum < 150) { label = '良好'; colorBg = 'var(--scanner-state-info-100)';    colorFg = 'var(--scanner-state-info)'; }
+        else if (avgNum < 300) { label = '一般'; colorBg = 'var(--scanner-state-warning-100)'; colorFg = 'var(--scanner-state-warning)'; }
+        else                   { label = '较差'; colorBg = 'var(--scanner-state-error-100)';   colorFg = 'var(--scanner-state-error)'; }
+        els.statLatencyLevel.textContent = label;
+        els.statLatencyLevel.style.background = colorBg;
+        els.statLatencyLevel.style.color = colorFg;
+      }
+    } else {
+      setText(els.statLatencyMin, '-');
+      setText(els.statLatencyMax, '-');
+      if (els.statLatencyLevel) { els.statLatencyLevel.textContent = '-'; els.statLatencyLevel.style.background = 'var(--scanner-muted)'; els.statLatencyLevel.style.color = 'var(--scanner-ink-2)'; }
+    }
+
+    // Card3: 服务端口总数
+    setText(els.statServicesTotal, servicesTotal.toString());
+
+    // Card4: 待补证据等级徽章 + 各缺失类型高亮
+    if (devices.length === 0) {
+      if (els.statEvidenceBadge) { els.statEvidenceBadge.textContent = '无数据'; els.statEvidenceBadge.style.background = 'var(--scanner-muted)'; els.statEvidenceBadge.style.color = 'var(--scanner-ink-2)'; }
+    } else {
+      const ratio = pending / devices.length;
+      let label, colorBg, colorFg;
+      if (ratio <= 0.1)      { label = '非常完整'; colorBg = 'var(--scanner-state-success-100)'; colorFg = 'var(--scanner-state-success)'; }
+      else if (ratio <= 0.4) { label = '基本完整'; colorBg = 'var(--scanner-state-info-100)';    colorFg = 'var(--scanner-state-info)'; }
+      else if (ratio <= 0.7) { label = '缺较多';   colorBg = 'var(--scanner-state-warning-100)'; colorFg = 'var(--scanner-state-warning)'; }
+      else                   { label = '严重缺失'; colorBg = 'var(--scanner-state-error-100)';   colorFg = 'var(--scanner-state-error)'; }
+      if (els.statEvidenceBadge) { els.statEvidenceBadge.textContent = label; els.statEvidenceBadge.style.background = colorBg; els.statEvidenceBadge.style.color = colorFg; }
+    }
+    // 4类缺失：有缺失的高亮（不透明），否则淡出（opacity 0.3）
+    function setChipActive(id, active) {
+      const el = document.getElementById(id);
+      if (!el) return;
+      el.style.opacity = active ? '1' : '0.3';
+      el.style.outline = active ? '1px solid currentColor' : 'none';
+    }
+    setChipActive('stat-chip-mac',      missingMac > 0);
+    setChipActive('stat-chip-vendor',   missingVendor > 0);
+    setChipActive('stat-chip-hostname', missingHostname > 0);
+    setChipActive('stat-chip-ports',    missingPorts > 0);
+
+    // 同步侧栏「扫描概览」
+    refreshSidebarOverviewStats();
+  }
+
+  /**
+   * 刷新侧边栏底部「扫描概览」三小卡：累计扫描 / 累计发现 / 在线率
+   * 数据来源：localStorage 历史记录 + 当前内存中的 devices
+   */
+  function refreshSidebarOverviewStats() {
+    const history = (typeof loadHistory === 'function') ? (loadHistory() || []) : [];
+
+    // 累计扫描次数（含本次如果已经开始跑且有设备）
+    const historyCount = history.length;
+    const pendingRun = !historyCount || devices.length > 0 ? 1 : 0;
+    const totalRuns = historyCount + (history.length === 0 && devices.length === 0 ? 0 : pendingRun);
+    setText(els.sideStatHistory, totalRuns.toString());
+
+    // 累计发现设备（历史 totalCount + 当前 devices.length，避免重复）
+    const historyDevices = history.reduce((s, h) => s + (parseInt(h.totalCount) || 0), 0);
+    setText(els.sideStatDevicesEver, (historyDevices + devices.length).toString());
+
+    // 在线率：优先用当前批次（devices）；否则用历史累计比值
+    let onlineRate = null;
+    if (devices.length > 0) {
+      onlineRate = (devices.filter(d => d.status === '在线').length / devices.length) * 100;
+    } else if (history.length > 0) {
+      const tSum = history.reduce((s, h) => s + (parseInt(h.totalCount) || 0), 0);
+      const oSum = history.reduce((s, h) => s + (parseInt(h.onlineCount) || 0), 0);
+      if (tSum > 0) onlineRate = (oSum / tSum) * 100;
+    }
+    setText(els.sideStatAvgRate, onlineRate == null ? '-' : `${onlineRate.toFixed(0)}%`);
   }
 
   function addOrUpdateDevice(device) {
@@ -1746,6 +1930,7 @@
       setText(els.scanElapsed, (data.elapsed / 1000).toFixed(1));
       const pct = data.total ? Math.round((data.scanned / data.total) * 100) : 0;
       els.scanProgress.style.width = `${pct}%`;
+      setText(els.scanPctText, `${pct}%`);
 
       // 更新扫描动画
       const scanLoadingPct = document.getElementById('scan-loading-pct');

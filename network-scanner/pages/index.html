@@ -479,12 +479,35 @@ body {
         width: 420px;
         max-width: 90vw;
         height: 100vh;
+        min-height: 0;
         background: var(--scanner-card);
         box-shadow: -8px 0 32px rgba(0,0,0,0.12);
         display: flex;
         flex-direction: column;
         transform: translateX(100%);
         transition: transform 0.25s ease;
+      }
+      .drawer-scroll {
+        flex: 1 1 auto;
+        min-height: 0;
+        overflow-y: auto;
+        overflow-x: hidden;
+        display: block;          /* 块级堆叠 → 子元素不参与 flex shrink，避免下方 Ping/端口/AI 面板被压缩消失 */
+        padding: 0 0 28px 0;
+        box-sizing: border-box;
+        /* 平滑滚动条（亮暗主题通用） */
+        scrollbar-width: thin;
+        scrollbar-color: var(--scanner-border) transparent;
+      }
+      .drawer-scroll::-webkit-scrollbar {
+        width: 8px;
+      }
+      .drawer-scroll::-webkit-scrollbar-thumb {
+        background: var(--scanner-border);
+        border-radius: 4px;
+      }
+      .drawer-scroll::-webkit-scrollbar-thumb:hover {
+        background: var(--scanner-ink-3);
       }
       .drawer-header {
         padding: 20px 24px 16px;
@@ -537,9 +560,8 @@ body {
       }
       .drawer-ip-hero .meta { font-size: 11px; opacity: 0.7; margin-top: 4px; }
       .drawer-body {
-        padding: 12px 24px;
-        flex: 1;
-        overflow-y: auto;
+        padding: 12px 24px 4px;
+        flex: 0 0 auto;
       }
       .drawer-row {
         display: flex;
@@ -1025,12 +1047,7 @@ body {
       .ai-config-status.err { color: var(--scanner-state-error); }
       .ai-config-status.testing { color: var(--scanner-state-info); }
 
-      /* AI 分析类型按钮 */
-      .ai-analyze-types {
-        display: flex;
-        gap: 8px;
-        margin-bottom: 8px;
-      }
+      /* AI 分析类型按钮（旧占位：新版样式在下方 .ai-analyze-types 声明处） */
       /* =========================================================
          AI 智能分析区 —— 专业运维工具风（与 Ping/端口扫描统一）
          核心约束：不去 AI 味（禁用紫粉蓝炫彩渐变主视觉、圆角≤10px、
@@ -1038,10 +1055,21 @@ body {
          ========================================================= */
 
       /* ---------- 操作区：类型按钮组 + 配置按钮 ---------- */
+      .action-panel-body {
+        /* 防止子元素撑宽后溢出面板圆角/阴影外，同时保证 box-sizing */
+        overflow-x: clip;
+        box-sizing: border-box;
+      }
       .ai-action-row {
-        justify-content: space-between;
-        align-items: stretch;
-        flex-wrap: wrap;
+        display: flex;
+        width: 100%;
+        box-sizing: border-box;
+        min-width: 0;                      /* Flex 父宽度约束 */
+        column-gap: 12px;                  /* 同一行：左按钮组与右配置按钮之间间隔 */
+        row-gap: 12px;                     /* 空间不足换行：行间垂直间隔 */
+        justify-content: space-between;    /* 够宽时：两端对齐（专业运维风）；换行后：各自占行、配置按钮靠右 */
+        align-items: center;
+        flex-wrap: wrap;                   /* 放不下就换行，绝不溢出或挤压按钮变形 */
       }
       .ai-analyze-types {
         display: inline-flex;
@@ -1049,21 +1077,24 @@ body {
         /* 合并边框：相邻按钮 1px 重叠避免 2px 缝 */
         margin: 0;
         padding: 0;
+        /* 重要：按钮组保持自然内容宽度，不拉伸均分、不压缩变形 */
+        flex: 0 0 auto;
       }
-      /* 类型按钮继承通用 .action-btn 基础样式，仅覆盖分组视觉 */
+      /* 类型按钮：还原原「按内容自适应」美感，字体/padding 稍加大让它更饱满、专业 */
       .ai-type-btn {
-        /* 禁用旧竖排样式，保证水平布局 */
-        flex: 0 0 auto !important;
+        flex: 0 0 auto !important;         /* 死也不拉伸变形，保持内容尺寸 */
+        min-width: 0;                      /* 但允许父 flex-wrap 自然换行 */
         flex-direction: row !important;
-        height: 36px;           /* 统一 36px 命中高度（≥ 原 34px 竖卡） */
-        min-width: 100px;
-        font-size: 12.5px;       /* 原 12px → 提升 0.5px，更易读 */
-        font-weight: 500;
-        padding: 0 12px;
+        height: 38px;                      /* 36→38，更饱满 */
+        font-size: 13px;                   /* 12.5→13，更易读、高级感 */
+        font-weight: 600;
+        padding: 0 14px;                   /* 12→14，呼吸感 */
         gap: 6px;
-        border-radius: 8px;      /* 运维风统一圆角 */
+        border-radius: 9px;                /* 圆角略增，整体风格更精致 */
+        white-space: nowrap;
+        overflow: visible;                 /* 图标/文字绝不被裁 */
       }
-      /* 相邻按钮圆角合并（分组 Tab 效果，与端口扫描 action-btn 风格一致但更紧凑） */
+      /* 相邻按钮圆角合并（分组 Tab 效果） */
       .ai-type-btn-first { border-top-right-radius: 0; border-bottom-right-radius: 0; }
       .ai-type-btn-mid   { border-radius: 0; margin-left: -1px; }
       .ai-type-btn-last  { border-top-left-radius: 0; border-bottom-left-radius: 0; margin-left: -1px; }
@@ -1078,18 +1109,29 @@ body {
         opacity: 0.5;
         cursor: not-allowed;
       }
+      /* Alt 快捷键 kbd：恢复原尺寸，并让它更具专业运维风（略亮底+细边框） */
+      .ai-type-btn .ai-kbd {
+        margin-left: 7px;
+        padding: 2px 6px;
+        font-size: 10px;
+        line-height: 1;
+      }
 
-      /* 配置按钮：ghost 描边样式，视觉次级但可点击区域 36px 高（原小文字 11px） */
+      /* 配置按钮：ghost 描边样式，空间不足时自动换行到第二行，保持右对齐 */
       .ai-config-btn {
-        height: 36px;
-        padding: 0 12px;
-        font-size: 12.5px;
-        border-radius: 8px;
+        height: 38px;
+        padding: 0 14px;
+        font-size: 13px;
+        font-weight: 600;
+        border-radius: 9px;
         border: 1px dashed var(--scanner-border);    /* 虚线：暗示"配置入口"，非主操作 */
         background: var(--scanner-card);
         color: var(--scanner-ink-2);
-        gap: 6px;
-        transition: all 0.2s;
+        display: inline-flex;
+        align-items: center;
+        gap: 7px;
+        flex: 0 0 auto;                   /* 不参与均分，按实际内容宽度 */
+        transition: all 0.2s ease;
       }
       .ai-config-btn:hover {
         border-color: var(--scanner-primary);
@@ -2112,61 +2154,159 @@ body {
       <div data-viewport-mode="app-shell" class="bg-background text-foreground">
         <!-- Sidebar -->
         <aside data-shell="sidebar" class="flex flex-col" data-region="local-info">
-          <div class="p-4 border-b border-border">
-            <div class="flex items-center gap-2">
-              <div class="w-8 h-8 rounded-lg bg-primary text-primary-foreground flex items-center justify-center">
-                <i data-lucide="scan" class="w-4 h-4"></i>
+          <!-- Logo Header（更厚实） -->
+          <div class="px-5 py-4 border-b border-border bg-card/50">
+            <div class="flex items-center gap-3">
+              <div class="w-10 h-10 rounded-xl bg-primary text-primary-foreground flex items-center justify-center shadow-1 shrink-0">
+                <i data-lucide="scan" class="w-5 h-5"></i>
               </div>
-              <div>
-                <h1 class="text-sm font-semibold text-foreground">本机信息</h1>
-                <p class="text-xs text-muted-foreground">当前主机</p>
-              </div>
-            </div>
-          </div>
-
-          <div class="p-4">
-            <div class="local-info-card">
-              <div class="flex items-start justify-between mb-3">
-                <span class="text-xs opacity-90">本机 IP 地址</span>
-                <span id="local-prefix" class="text-[10px] px-1.5 py-0.5 rounded bg-white/20">/24</span>
-              </div>
-              <div id="local-ip" class="text-2xl font-semibold scanner-mono mb-4">-</div>
-              <div class="space-y-1.5">
-                <div class="info-row">
-                  <span><i data-lucide="wifi" style="width: 12px; height: 12px;"></i> 网关</span>
-                  <span id="local-gateway" class="scanner-mono">-</span>
-                </div>
-                <div class="info-row">
-                  <span><i data-lucide="hash" style="width: 12px; height: 12px;"></i> 子网掩码</span>
-                  <span id="local-netmask" class="scanner-mono">-</span>
-                </div>
-                <div class="info-row">
-                  <span><i data-lucide="radio" style="width: 12px; height: 12px;"></i> 广播地址</span>
-                  <span id="local-broadcast" class="scanner-mono">-</span>
-                </div>
-                <div class="info-row">
-                  <span><i data-lucide="activity" style="width: 12px; height: 12px;"></i> 主机数</span>
-                  <span id="local-host-count" class="scanner-mono">-</span>
-                </div>
-              </div>
-              <div class="info-divider space-y-1.5">
-                <div class="split-row"><span>主机名</span><span id="local-hostname">-</span></div>
-                <div class="split-row"><span>MAC 地址</span><span id="local-mac" class="scanner-mono">-</span></div>
-                <div class="split-row"><span>DNS</span><span id="local-dns" class="scanner-mono">-</span></div>
-                <div class="split-row"><span>子网段</span><span id="local-cidr" class="scanner-mono">-</span></div>
+              <div class="min-w-0">
+                <h1 class="text-[15px] font-bold text-foreground leading-tight">本机信息</h1>
+                <p class="text-[11px] text-muted-foreground mt-0.5">当前主机 · 本地视角</p>
               </div>
             </div>
           </div>
 
-          <div class="px-4 pb-4 flex-1" data-region="adapter-list">
-            <div class="flex items-center justify-between mb-2">
-              <h2 class="text-sm font-semibold text-foreground">网卡选择</h2>
-              <span id="adapter-count" class="text-xs px-1.5 py-0.5 rounded bg-muted text-muted-foreground">0</span>
+          <!-- 本机信息大卡片（饱满化：渐变色+网格组） -->
+          <div class="p-5">
+            <div class="local-info-card rounded-2xl p-5 relative overflow-hidden" style="background: linear-gradient(145deg, var(--scanner-primary) 0%, color-mix(in srgb, var(--scanner-primary) 80%, var(--scanner-state-info)) 100%); color:#fff; box-shadow: 0 10px 28px -10px color-mix(in srgb, var(--scanner-primary) 70%, transparent);">
+              <!-- 装饰光晕 -->
+              <div class="absolute -right-8 -top-8 w-32 h-32 rounded-full" style="background: rgba(255,255,255,0.12); filter: blur(10px);"></div>
+              <div class="absolute -right-4 bottom-0 w-24 h-24 rounded-full" style="background: rgba(255,255,255,0.08);"></div>
+
+              <div class="relative">
+                <div class="flex items-start justify-between mb-1">
+                  <span class="text-[11px] font-semibold uppercase tracking-wider opacity-80">本机 IP 地址</span>
+                  <span id="local-prefix" class="text-[10px] px-2 py-0.5 rounded-full bg-white/25 font-bold backdrop-blur-sm">/24</span>
+                </div>
+                <div id="local-ip" class="text-3xl font-black scanner-mono mb-5 tracking-tight" style="font-size:clamp(22px, 2.4vw, 30px);">-</div>
+
+                <!-- 4 项网络参数（2x2 grid） -->
+                <div class="grid grid-cols-2 gap-2 mb-4">
+                  <div class="info-chip-row px-2.5 py-2 rounded-lg bg-white/12 backdrop-blur-sm">
+                    <div class="flex items-center gap-1.5 mb-0.5 opacity-85">
+                      <i data-lucide="wifi" style="width:11px;height:11px;"></i>
+                      <span class="text-[9.5px] font-semibold uppercase tracking-wide">网关</span>
+                    </div>
+                    <div id="local-gateway" class="scanner-mono text-[12.5px] font-bold leading-none truncate">-</div>
+                  </div>
+                  <div class="info-chip-row px-2.5 py-2 rounded-lg bg-white/12 backdrop-blur-sm">
+                    <div class="flex items-center gap-1.5 mb-0.5 opacity-85">
+                      <i data-lucide="hash" style="width:11px;height:11px;"></i>
+                      <span class="text-[9.5px] font-semibold uppercase tracking-wide">子网掩码</span>
+                    </div>
+                    <div id="local-netmask" class="scanner-mono text-[12.5px] font-bold leading-none truncate">-</div>
+                  </div>
+                  <div class="info-chip-row px-2.5 py-2 rounded-lg bg-white/12 backdrop-blur-sm">
+                    <div class="flex items-center gap-1.5 mb-0.5 opacity-85">
+                      <i data-lucide="radio" style="width:11px;height:11px;"></i>
+                      <span class="text-[9.5px] font-semibold uppercase tracking-wide">广播地址</span>
+                    </div>
+                    <div id="local-broadcast" class="scanner-mono text-[12.5px] font-bold leading-none truncate">-</div>
+                  </div>
+                  <div class="info-chip-row px-2.5 py-2 rounded-lg bg-white/12 backdrop-blur-sm">
+                    <div class="flex items-center gap-1.5 mb-0.5 opacity-85">
+                      <i data-lucide="activity" style="width:11px;height:11px;"></i>
+                      <span class="text-[9.5px] font-semibold uppercase tracking-wide">主机数</span>
+                    </div>
+                    <div id="local-host-count" class="scanner-mono text-[12.5px] font-bold leading-none">-</div>
+                  </div>
+                </div>
+
+                <!-- 分隔条 -->
+                <div class="h-px w-full bg-white/25 my-3"></div>
+
+                <!-- 详细信息（列表） -->
+                <div class="space-y-2">
+                  <div class="split-row" style="color:#fff; opacity:0.95;">
+                    <span class="text-[10.5px] opacity-80 font-semibold uppercase tracking-wide">主机名</span>
+                    <span id="local-hostname" class="text-[12px] font-semibold truncate">-</span>
+                  </div>
+                  <div class="split-row" style="color:#fff; opacity:0.95;">
+                    <span class="text-[10.5px] opacity-80 font-semibold uppercase tracking-wide">MAC 地址</span>
+                    <span id="local-mac" class="scanner-mono text-[12px] font-bold">-</span>
+                  </div>
+                  <div class="split-row" style="color:#fff; opacity:0.95;">
+                    <span class="text-[10.5px] opacity-80 font-semibold uppercase tracking-wide">DNS</span>
+                    <span id="local-dns" class="scanner-mono text-[12px] font-bold truncate">-</span>
+                  </div>
+                  <div class="split-row" style="color:#fff; opacity:0.95;">
+                    <span class="text-[10.5px] opacity-80 font-semibold uppercase tracking-wide">子网段</span>
+                    <span id="local-cidr" class="scanner-mono text-[12px] font-bold">-</span>
+                  </div>
+                </div>
+              </div>
             </div>
-            <div id="adapter-list" class="space-y-2">
-              <!-- adapters injected here -->
+          </div>
+
+          <!-- 网卡选择 + 底部辅助卡片（饱满化填补空白） -->
+          <div class="px-5 pb-5 flex-1 flex flex-col gap-5" data-region="adapter-list">
+            <div>
+              <div class="flex items-center justify-between mb-2.5">
+                <h2 class="text-[13px] font-bold text-foreground flex items-center gap-1.5">
+                  <i data-lucide="network" class="w-4 h-4 text-primary"></i>
+                  网卡选择
+                </h2>
+                <span id="adapter-count" class="text-[11px] px-2 py-0.5 rounded-full bg-muted text-muted-foreground font-semibold">0</span>
+              </div>
+              <div id="adapter-list" class="space-y-2.5">
+                <!-- adapters injected here -->
+              </div>
+              <p class="mt-3 text-[10.5px] text-muted-foreground leading-relaxed px-0.5">
+                <i data-lucide="info" class="w-3 h-3 inline mr-1 align-[-2px]"></i>
+                切换网卡会清空已扫结果，请重新扫描当前网络。
+              </p>
             </div>
-            <p class="mt-3 text-[10px] text-muted-foreground">切换会清空已扫结果，请重新扫描当前网卡。</p>
+
+            <!-- 辅助卡片：快捷预设扫描模式（占空） -->
+            <div class="mt-auto space-y-2.5">
+              <div class="rounded-xl p-4 border border-border shadow-1" style="background:var(--scanner-card);">
+                <div class="flex items-center gap-1.5 mb-3">
+                  <i data-lucide="zap" class="w-3.5 h-3.5" style="color:var(--scanner-state-warning);"></i>
+                  <span class="text-[12px] font-bold text-foreground">快捷模式说明</span>
+                </div>
+                <div class="space-y-2">
+                  <div class="flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-lg" style="background:var(--scanner-muted);">
+                    <span class="text-[10.5px] font-semibold">快速</span>
+                    <span class="text-[10px] text-muted-foreground">Ping 探测 · ~10s</span>
+                  </div>
+                  <div class="flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-lg" style="background:var(--scanner-muted);">
+                    <span class="text-[10.5px] font-semibold">标准</span>
+                    <span class="text-[10px] text-muted-foreground">+MAC/厂商 · ~30s</span>
+                  </div>
+                  <div class="flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-lg" style="background:var(--scanner-muted);">
+                    <span class="text-[10.5px] font-semibold">深度</span>
+                    <span class="text-[10px] text-muted-foreground">+端口扫描 · 数分钟</span>
+                  </div>
+                  <div class="flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-lg" style="background:var(--scanner-muted);">
+                    <span class="text-[10.5px] font-semibold">AI</span>
+                    <span class="text-[10px] text-muted-foreground">+风险画像 · 综合</span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- 辅助卡片：历史概览 -->
+              <div class="rounded-xl p-4 border border-border shadow-1" style="background:var(--scanner-card);">
+                <div class="flex items-center gap-1.5 mb-3">
+                  <i data-lucide="bar-chart-3" class="w-3.5 h-3.5" style="color:var(--scanner-state-info);"></i>
+                  <span class="text-[12px] font-bold text-foreground">扫描概览</span>
+                </div>
+                <div class="grid grid-cols-3 gap-2 text-center">
+                  <div class="px-2 py-2.5 rounded-lg" style="background:var(--scanner-muted);">
+                    <div id="side-stat-history" class="text-[15px] font-black text-foreground leading-none">0</div>
+                    <div class="text-[9.5px] text-muted-foreground mt-1 font-semibold uppercase tracking-wide">累计扫描</div>
+                  </div>
+                  <div class="px-2 py-2.5 rounded-lg" style="background:var(--scanner-muted);">
+                    <div id="side-stat-devices-ever" class="text-[15px] font-black text-foreground leading-none">0</div>
+                    <div class="text-[9.5px] text-muted-foreground mt-1 font-semibold uppercase tracking-wide">发现设备</div>
+                  </div>
+                  <div class="px-2 py-2.5 rounded-lg" style="background:var(--scanner-muted);">
+                    <div id="side-stat-avg-rate" class="text-[15px] font-black scanner-mono text-foreground leading-none">-</div>
+                    <div class="text-[9.5px] text-muted-foreground mt-1 font-semibold uppercase tracking-wide">在线率</div>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
         </aside>
 
@@ -2220,63 +2360,98 @@ body {
           <!-- Scrollable content -->
           <div data-scroll-region="primary" class="p-5 sm:p-7 space-y-6">
             <!-- Scan controls -->
-            <section data-region="scan-controls" class="rounded-xl border border-border bg-card p-5 shadow-1">
-              <div class="flex flex-col lg:flex-row lg:items-center gap-4">
+            <section data-region="scan-controls" class="rounded-2xl border border-border bg-card p-6 shadow-2">
+              <div class="flex flex-col lg:flex-row lg:items-center gap-5">
                 <div class="flex items-center gap-3 shrink-0">
-                  <button id="btn-start" class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-medium shadow-1 hover:bg-primary/90 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-                    <i data-lucide="play" class="w-4 h-4 fill-current"></i>
+                  <button id="btn-start" class="inline-flex items-center gap-2.5 px-6 py-3 rounded-xl bg-primary text-primary-foreground text-sm font-semibold shadow-2 hover:bg-primary/90 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                    <i data-lucide="play" class="w-4.5 h-4.5 fill-current"></i>
                     开始扫描
                   </button>
-                  <button id="btn-stop" style="display:none;" class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-destructive text-destructive-foreground text-sm font-medium shadow-1 hover:opacity-90 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
-                    <i data-lucide="square" class="w-4 h-4 fill-current"></i>
+                  <button id="btn-stop" style="display:none;" class="inline-flex items-center gap-2.5 px-6 py-3 rounded-xl bg-destructive text-destructive-foreground text-sm font-semibold shadow-2 hover:opacity-90 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                    <i data-lucide="square" class="w-4.5 h-4.5 fill-current"></i>
                     停止
                   </button>
                 </div>
-                <div class="flex-1 min-w-0 flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
-                  <div class="inline-flex items-center rounded-md border border-border bg-background p-0.5 shrink-0">
-                    <button data-mode="quick" class="mode-btn px-3 py-1.5 text-xs font-medium rounded text-muted-foreground hover:bg-muted transition whitespace-nowrap">快速</button>
-                    <button data-mode="standard" class="mode-btn px-3 py-1.5 text-xs font-medium rounded bg-primary text-primary-foreground whitespace-nowrap">标准</button>
-                    <button data-mode="deep" class="mode-btn px-3 py-1.5 text-xs font-medium rounded text-muted-foreground hover:bg-muted transition whitespace-nowrap">深度</button>
-                    <button data-mode="ai" class="mode-btn px-3 py-1.5 text-xs font-medium rounded text-muted-foreground hover:bg-muted transition whitespace-nowrap">AI</button>
+                <div class="flex-1 min-w-0 flex flex-col sm:flex-row items-stretch sm:items-center gap-3.5">
+                  <div class="inline-flex items-center rounded-xl border border-border bg-background p-1 shrink-0 gap-0.5">
+                    <button data-mode="quick" class="mode-btn px-4 py-2 text-xs font-semibold rounded-lg text-muted-foreground hover:bg-muted transition whitespace-nowrap">快速</button>
+                    <button data-mode="standard" class="mode-btn px-4 py-2 text-xs font-semibold rounded-lg bg-primary text-primary-foreground whitespace-nowrap shadow-1">标准</button>
+                    <button data-mode="deep" class="mode-btn px-4 py-2 text-xs font-semibold rounded-lg text-muted-foreground hover:bg-muted transition whitespace-nowrap">深度</button>
+                    <button data-mode="ai" class="mode-btn px-4 py-2 text-xs font-semibold rounded-lg text-muted-foreground hover:bg-muted transition whitespace-nowrap">AI</button>
                   </div>
                   <div class="flex-1 min-w-0">
                     <div class="relative">
-                      <i data-lucide="target" class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-primary"></i>
-                      <input id="scan-target" type="text" value="" class="w-full rounded-md border border-input bg-input pl-9 pr-16 py-2 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" />
-                      <span id="scan-host-count" class="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground scanner-mono">-</span>
+                      <i data-lucide="target" class="absolute left-4 top-1/2 -translate-y-1/2 w-4.5 h-4.5 text-primary"></i>
+                      <input id="scan-target" type="text" value="" class="w-full rounded-xl border border-input bg-input pl-11 pr-20 py-3 text-sm text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" />
+                      <span id="scan-host-count" class="absolute right-4 top-1/2 -translate-y-1/2 text-xs font-semibold text-muted-foreground scanner-mono">-</span>
                     </div>
                   </div>
                 </div>
               </div>
-              <div class="mt-4 space-y-2">
-                <div class="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
-                  <span class="scanner-mono">扫描范围 <span id="scan-range">-</span></span>
-                  <span>·</span>
-                  <span><span id="scan-hosts">-</span> 主机</span>
-                  <span>·</span>
-                  <span id="scan-mode">标准</span>
-                  <span>·</span>
-                  <span>发现 <span id="scan-found">0</span> 台</span>
-                  <span>·</span>
-                  <span><span id="scan-elapsed">0</span> 秒</span>
+
+              <!-- 扫描指标卡块 + 进度条 -->
+              <div class="mt-6 grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-5 gap-3">
+                <div class="scan-meta-chip col-span-2 sm:col-span-1 flex items-center gap-2.5 px-4 py-3 rounded-xl" style="background:var(--scanner-muted);">
+                  <i data-lucide="globe" class="w-4 h-4 text-primary shrink-0"></i>
+                  <div class="min-w-0 flex-1">
+                    <div class="text-[10px] uppercase tracking-wide text-muted-foreground leading-none">扫描范围</div>
+                    <div class="text-sm font-bold scanner-mono text-foreground truncate mt-1"><span id="scan-range">-</span></div>
+                  </div>
                 </div>
-                <div class="w-full h-1.5 bg-muted rounded-full overflow-hidden">
-                  <div id="scan-progress" class="progress-bar h-full bg-primary rounded-full" style="width: 0%"></div>
+                <div class="scan-meta-chip flex items-center gap-2.5 px-4 py-3 rounded-xl" style="background:var(--scanner-muted);">
+                  <i data-lucide="servers" class="w-4 h-4 shrink-0" style="color:var(--scanner-state-info);"></i>
+                  <div class="min-w-0 flex-1">
+                    <div class="text-[10px] uppercase tracking-wide text-muted-foreground leading-none">待扫主机</div>
+                    <div class="text-sm font-bold scanner-mono text-foreground mt-1"><span id="scan-hosts">-</span> <span class="text-[10px] text-muted-foreground font-normal">台</span></div>
+                  </div>
+                </div>
+                <div class="scan-meta-chip flex items-center gap-2.5 px-4 py-3 rounded-xl" style="background:var(--scanner-muted);">
+                  <i data-lucide="zap" class="w-4 h-4 shrink-0" style="color:var(--scanner-state-warning);"></i>
+                  <div class="min-w-0 flex-1">
+                    <div class="text-[10px] uppercase tracking-wide text-muted-foreground leading-none">扫描模式</div>
+                    <div class="text-sm font-bold text-foreground mt-1"><span id="scan-mode">标准</span></div>
+                  </div>
+                </div>
+                <div class="scan-meta-chip flex items-center gap-2.5 px-4 py-3 rounded-xl" style="background:var(--scanner-muted);">
+                  <i data-lucide="check-circle-2" class="w-4 h-4 shrink-0" style="color:var(--scanner-state-success);"></i>
+                  <div class="min-w-0 flex-1">
+                    <div class="text-[10px] uppercase tracking-wide text-muted-foreground leading-none">已发现</div>
+                    <div class="text-sm font-bold scanner-mono text-foreground mt-1"><span id="scan-found">0</span> <span class="text-[10px] text-muted-foreground font-normal">台</span></div>
+                  </div>
+                </div>
+                <div class="scan-meta-chip col-span-2 sm:col-span-4 lg:col-span-1 flex items-center gap-2.5 px-4 py-3 rounded-xl" style="background:var(--scanner-muted);">
+                  <i data-lucide="timer" class="w-4 h-4 shrink-0" style="color:var(--scanner-ink-3);"></i>
+                  <div class="min-w-0 flex-1">
+                    <div class="text-[10px] uppercase tracking-wide text-muted-foreground leading-none">累计耗时</div>
+                    <div class="text-sm font-bold scanner-mono text-foreground mt-1"><span id="scan-elapsed">0</span> <span class="text-[10px] text-muted-foreground font-normal">秒</span></div>
+                  </div>
                 </div>
               </div>
 
-              <!-- 扫描中动画 -->
-              <div id="scan-loading" class="hidden mt-4">
-                <div class="flex items-center gap-3 p-3 rounded-lg border" style="background:var(--scanner-primary-50); border-color:var(--scanner-primary-200);">
-                  <div class="relative w-7 h-7 shrink-0">
-                    <div class="absolute inset-0 rounded-full border-2 opacity-30" style="border-color:var(--scanner-primary);"></div>
-                    <div class="absolute inset-0 rounded-full border-2 border-t-transparent" style="border-color:var(--scanner-primary); animation: spin 1s linear infinite;"></div>
+              <!-- 加厚进度条（带渐变） -->
+              <div class="mt-5">
+                <div class="flex items-center justify-between mb-2">
+                  <span class="text-xs font-semibold text-muted-foreground">扫描进度</span>
+                  <span id="scan-pct-text" class="text-xs font-bold scanner-mono" style="color:var(--scanner-primary);">0%</span>
+                </div>
+                <div class="w-full h-3 rounded-full overflow-hidden" style="background:var(--scanner-muted);">
+                  <div id="scan-progress" class="progress-bar h-full rounded-full" style="width: 0%; background: linear-gradient(90deg, var(--scanner-primary), color-mix(in srgb, var(--scanner-primary) 50%, var(--scanner-state-info)));"></div>
+                </div>
+              </div>
+
+              <!-- 扫描中动画（更饱满） -->
+              <div id="scan-loading" class="hidden mt-5">
+                <div class="flex items-center gap-4 p-4 rounded-xl border" style="background: linear-gradient(135deg, var(--scanner-primary-50), var(--scanner-state-info-50)); border-color:var(--scanner-primary-200);">
+                  <div class="relative w-10 h-10 shrink-0">
+                    <div class="absolute inset-0 rounded-full border-3 opacity-30" style="border-color:var(--scanner-primary);"></div>
+                    <div class="absolute inset-0 rounded-full border-3 border-t-transparent" style="border-color:var(--scanner-primary); animation: spin 0.9s linear infinite;"></div>
+                    <i data-lucide="scan" class="absolute inset-0 m-auto w-4 h-4" style="color:var(--scanner-primary);"></i>
                   </div>
                   <div class="flex-1 min-w-0">
-                    <div class="text-sm font-medium" style="color:var(--scanner-primary);">正在扫描网络设备...</div>
-                    <div id="scan-loading-detail" class="text-xs text-muted-foreground mt-0.5">准备中</div>
+                    <div class="text-base font-bold" style="color:var(--scanner-primary);">正在扫描网络设备...</div>
+                    <div id="scan-loading-detail" class="text-xs text-muted-foreground mt-1">准备中</div>
                   </div>
-                  <div id="scan-loading-pct" class="text-xl font-bold scanner-mono" style="color:var(--scanner-primary);">0%</div>
+                  <div id="scan-loading-pct" class="text-2xl font-black scanner-mono pr-2" style="color:var(--scanner-primary); letter-spacing: -0.02em;">0%</div>
                 </div>
               </div>
             </section>
@@ -2290,102 +2465,193 @@ body {
             </section>
 
             <!-- Scan summary -->
-            <section data-region="scan-summary" class="grid grid-cols-2 lg:grid-cols-4 gap-4">
-              <div class="rounded-xl border border-border bg-card p-5 shadow-1 flex items-start gap-3">
-                <div class="w-9 h-9 rounded-lg bg-primary/10 text-primary flex items-center justify-center shrink-0">
-                  <i data-lucide="monitor" class="w-4 h-4"></i>
+            <section data-region="scan-summary" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              <!-- Card 1: 发现设备 -->
+              <div class="summary-card rounded-2xl border border-border bg-card p-6 shadow-2 relative overflow-hidden">
+                <div class="absolute left-0 top-0 h-full w-1.5 rounded-r-full" style="background: linear-gradient(180deg, var(--scanner-primary), var(--scanner-state-info));"></div>
+                <div class="flex items-start justify-between gap-3 mb-4">
+                  <div class="w-12 h-12 rounded-xl flex items-center justify-center shrink-0" style="background: linear-gradient(135deg, var(--scanner-primary-100), var(--scanner-primary-50)); color: var(--scanner-primary);">
+                    <i data-lucide="monitor" class="w-5 h-5"></i>
+                  </div>
+                  <span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-semibold" style="background:var(--scanner-state-success-100); color:var(--scanner-state-success);">
+                    <span class="w-1.5 h-1.5 rounded-full bg-current animate-pulse"></span>
+                    实时
+                  </span>
                 </div>
                 <div class="min-w-0">
-                  <p class="text-xs text-muted-foreground whitespace-nowrap">发现设备</p>
-                  <p class="text-xl font-semibold text-foreground"><span id="stat-devices">0</span> <span class="text-xs font-normal text-muted-foreground">(在线 <span id="stat-online">0</span>)</span></p>
+                  <p class="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-1">发现设备</p>
+                  <div class="flex items-baseline gap-2">
+                    <p class="text-3xl font-black text-foreground leading-none" style="letter-spacing:-0.03em;"><span id="stat-devices">0</span></p>
+                    <p class="text-sm font-bold" style="color:var(--scanner-state-success);">(在线 <span id="stat-online">0</span>)</p>
+                  </div>
+                  <div class="mt-4">
+                    <div class="flex items-center justify-between text-[10px] font-semibold text-muted-foreground mb-1.5">
+                      <span>扫描完成度</span>
+                      <span id="stat-coverage-pct" class="scanner-mono">0%</span>
+                    </div>
+                    <div class="w-full h-1.5 rounded-full overflow-hidden" style="background:var(--scanner-muted);">
+                      <div id="stat-coverage-bar" class="h-full rounded-full" style="width:0%; background: linear-gradient(90deg, var(--scanner-primary), var(--scanner-state-info));"></div>
+                    </div>
+                  </div>
                 </div>
               </div>
-              <div class="rounded-xl border border-border bg-card p-5 shadow-1 flex items-start gap-3">
-                <div class="w-9 h-9 rounded-lg flex items-center justify-center shrink-0" style="background: color-mix(in srgb, var(--scanner-state-info) 10%, transparent); color: var(--scanner-state-info);">
-                  <i data-lucide="activity" class="w-4 h-4"></i>
+
+              <!-- Card 2: 平均延迟 -->
+              <div class="summary-card rounded-2xl border border-border bg-card p-6 shadow-2 relative overflow-hidden">
+                <div class="absolute left-0 top-0 h-full w-1.5 rounded-r-full" style="background: linear-gradient(180deg, var(--scanner-state-info), var(--scanner-state-success));"></div>
+                <div class="flex items-start justify-between gap-3 mb-4">
+                  <div class="w-12 h-12 rounded-xl flex items-center justify-center shrink-0" style="background: linear-gradient(135deg, var(--scanner-state-info-100), var(--scanner-state-info-50)); color: var(--scanner-state-info);">
+                    <i data-lucide="activity" class="w-5 h-5"></i>
+                  </div>
+                  <span id="stat-latency-level" class="inline-flex items-center px-2.5 py-1 rounded-full text-[10px] font-bold" style="background:var(--scanner-muted); color:var(--scanner-ink-2);">
+                    -
+                  </span>
                 </div>
                 <div class="min-w-0">
-                  <p class="text-xs text-muted-foreground whitespace-nowrap">平均延迟</p>
-                  <p class="text-xl font-semibold text-foreground scanner-mono"><span id="stat-latency">0.0</span> <span class="text-xs font-normal text-muted-foreground">ms</span></p>
-                  <p class="text-[10px] text-muted-foreground">耗时 <span id="stat-time">0</span> 秒</p>
+                  <p class="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-1">平均延迟</p>
+                  <div class="flex items-baseline gap-1.5">
+                    <p class="text-3xl font-black scanner-mono text-foreground leading-none" style="letter-spacing:-0.03em;"><span id="stat-latency">0.0</span></p>
+                    <p class="text-sm font-semibold text-muted-foreground">ms</p>
+                  </div>
+                  <div class="mt-4 grid grid-cols-2 gap-2">
+                    <div class="px-3 py-2 rounded-lg" style="background:var(--scanner-muted);">
+                      <div class="text-[9px] font-semibold uppercase tracking-wide text-muted-foreground">最快</div>
+                      <div class="text-sm font-bold scanner-mono text-foreground mt-0.5"><span id="stat-latency-min">-</span><span class="text-[9px] ml-0.5 text-muted-foreground font-normal">ms</span></div>
+                    </div>
+                    <div class="px-3 py-2 rounded-lg" style="background:var(--scanner-muted);">
+                      <div class="text-[9px] font-semibold uppercase tracking-wide text-muted-foreground">最慢</div>
+                      <div class="text-sm font-bold scanner-mono text-foreground mt-0.5"><span id="stat-latency-max">-</span><span class="text-[9px] ml-0.5 text-muted-foreground font-normal">ms</span></div>
+                    </div>
+                  </div>
                 </div>
               </div>
-              <div class="rounded-xl border border-border bg-card p-5 shadow-1 flex items-start gap-3">
-                <div class="w-9 h-9 rounded-lg flex items-center justify-center shrink-0" style="background: color-mix(in srgb, var(--scanner-state-success) 10%, transparent); color: var(--scanner-state-success);">
-                  <i data-lucide="fingerprint" class="w-4 h-4"></i>
+
+              <!-- Card 3: 服务识别 -->
+              <div class="summary-card rounded-2xl border border-border bg-card p-6 shadow-2 relative overflow-hidden">
+                <div class="absolute left-0 top-0 h-full w-1.5 rounded-r-full" style="background: linear-gradient(180deg, var(--scanner-state-success), var(--scanner-state-info));"></div>
+                <div class="flex items-start justify-between gap-3 mb-4">
+                  <div class="w-12 h-12 rounded-xl flex items-center justify-center shrink-0" style="background: linear-gradient(135deg, var(--scanner-state-success-100), var(--scanner-state-success-50)); color: var(--scanner-state-success);">
+                    <i data-lucide="fingerprint" class="w-5 h-5"></i>
+                  </div>
+                  <span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold" style="background:var(--scanner-state-success-100); color:var(--scanner-state-success);">
+                    <i data-lucide="badge-check" class="w-3 h-3"></i>
+                    已识别
+                  </span>
                 </div>
                 <div class="min-w-0">
-                  <p class="text-xs text-muted-foreground whitespace-nowrap">服务识别</p>
-                  <p class="text-xl font-semibold text-foreground"><span id="stat-fingerprints">0</span> <span class="text-xs font-normal text-muted-foreground">台</span></p>
+                  <p class="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-1">服务识别</p>
+                  <div class="flex items-baseline gap-1.5">
+                    <p class="text-3xl font-black text-foreground leading-none" style="letter-spacing:-0.03em;"><span id="stat-fingerprints">0</span></p>
+                    <p class="text-sm font-semibold text-muted-foreground">台设备</p>
+                  </div>
+                  <div class="mt-4 flex items-center gap-2 px-3 py-2.5 rounded-lg" style="background:var(--scanner-muted);">
+                    <i data-lucide="layers" class="w-4 h-4 shrink-0" style="color:var(--scanner-state-success);"></i>
+                    <div class="min-w-0 flex-1">
+                      <div class="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground leading-none">已发现服务</div>
+                      <div class="text-sm font-bold scanner-mono text-foreground mt-0.5"><span id="stat-services-total">0</span> <span class="text-[9px] text-muted-foreground font-normal">个端口</span></div>
+                    </div>
+                  </div>
                 </div>
               </div>
-              <div class="rounded-xl border border-border bg-card p-5 shadow-1 flex items-start gap-3">
-                <div class="w-9 h-9 rounded-lg flex items-center justify-center shrink-0" style="background: color-mix(in srgb, var(--scanner-state-warning) 10%, transparent); color: var(--scanner-state-warning);">
-                  <i data-lucide="clipboard-list" class="w-4 h-4"></i>
+
+              <!-- Card 4: 待补证据 -->
+              <div class="summary-card rounded-2xl border border-border bg-card p-6 shadow-2 relative overflow-hidden">
+                <div class="absolute left-0 top-0 h-full w-1.5 rounded-r-full" style="background: linear-gradient(180deg, var(--scanner-state-warning), var(--scanner-state-error));"></div>
+                <div class="flex items-start justify-between gap-3 mb-4">
+                  <div class="w-12 h-12 rounded-xl flex items-center justify-center shrink-0" style="background: linear-gradient(135deg, var(--scanner-state-warning-100), var(--scanner-state-warning-50)); color: var(--scanner-state-warning);">
+                    <i data-lucide="clipboard-list" class="w-5 h-5"></i>
+                  </div>
+                  <span id="stat-evidence-badge" class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold" style="background:var(--scanner-muted); color:var(--scanner-ink-2);">
+                    -
+                  </span>
                 </div>
                 <div class="min-w-0">
-                  <p class="text-xs text-muted-foreground whitespace-nowrap">待补证据</p>
-                  <p class="text-xl font-semibold text-foreground"><span id="stat-evidence">0</span> <span class="text-xs font-normal text-muted-foreground">台</span></p>
+                  <p class="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-1">待补证据</p>
+                  <div class="flex items-baseline gap-1.5">
+                    <p class="text-3xl font-black text-foreground leading-none" style="letter-spacing:-0.03em;"><span id="stat-evidence">0</span></p>
+                    <p class="text-sm font-semibold text-muted-foreground">台缺失</p>
+                  </div>
+                  <div class="mt-4 flex flex-wrap gap-1.5">
+                    <span id="stat-chip-mac" class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-semibold opacity-40" style="background:var(--scanner-state-warning-100); color:var(--scanner-state-warning);">
+                      <span class="w-1 h-1 rounded-full bg-current"></span>MAC
+                    </span>
+                    <span id="stat-chip-vendor" class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-semibold opacity-40" style="background:var(--scanner-state-warning-100); color:var(--scanner-state-warning);">
+                      <span class="w-1 h-1 rounded-full bg-current"></span>厂商
+                    </span>
+                    <span id="stat-chip-hostname" class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-semibold opacity-40" style="background:var(--scanner-state-warning-100); color:var(--scanner-state-warning);">
+                      <span class="w-1 h-1 rounded-full bg-current"></span>主机名
+                    </span>
+                    <span id="stat-chip-ports" class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-semibold opacity-40" style="background:var(--scanner-state-error-100); color:var(--scanner-state-error);">
+                      <span class="w-1 h-1 rounded-full bg-current"></span>开放端口
+                    </span>
+                  </div>
                 </div>
               </div>
             </section>
 
             <!-- Tabbed: topology + device list -->
-            <section data-region="results" class="rounded-xl border border-border bg-card shadow-1 overflow-hidden">
-              <!-- Tab bar -->
-              <div class="flex items-center justify-between gap-3 px-5 pt-4 border-b border-border">
-                <div class="inline-flex items-center gap-1 shrink-0">
-                  <button id="tab-topology" class="tab-btn inline-flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium border-b-2 border-transparent text-muted-foreground hover:text-foreground transition">
+            <section data-region="results" class="rounded-2xl border border-border bg-card shadow-2 overflow-hidden">
+              <!-- Tab header bar（加厚、更饱满） -->
+              <div class="flex items-center justify-between gap-4 px-6 py-4 border-b border-border flex-wrap" style="background: linear-gradient(180deg, var(--scanner-muted), var(--scanner-card)); border-bottom:1px solid var(--scanner-border);">
+                <div class="inline-flex items-center gap-1.5 shrink-0 p-1 rounded-xl bg-background/60 border border-border shadow-1">
+                  <button id="tab-topology" class="tab-btn inline-flex items-center gap-2 px-4 py-2.5 text-[13px] font-semibold rounded-lg border-b-2 border-transparent text-muted-foreground hover:text-foreground transition">
                     <i data-lucide="network" class="w-4 h-4"></i>
                     拓扑图
                   </button>
-                  <button id="tab-devicelist" class="tab-btn inline-flex items-center gap-1.5 px-4 py-2.5 text-sm font-medium border-b-2 border-primary text-primary transition">
+                  <button id="tab-devicelist" class="tab-btn inline-flex items-center gap-2 px-4 py-2.5 text-[13px] font-semibold rounded-lg bg-card border-b-2 border-primary text-primary shadow-1 transition">
                     <i data-lucide="list" class="w-4 h-4"></i>
                     设备列表
                   </button>
                 </div>
-                <div class="flex items-center gap-3 pb-2 overflow-hidden">
-                  <span id="result-meta" class="text-xs text-muted-foreground whitespace-nowrap">显示 <span id="device-count">0</span> 台 · <span id="device-cidr" class="scanner-mono">-</span></span>
-                  <span id="topo-legend" class="hidden sm:inline-flex items-center gap-1.5 text-[10px] text-muted-foreground whitespace-nowrap" style="display:none;">
-                    <span class="w-2.5 h-2.5 rounded-full" style="background:var(--scanner-primary);"></span>本机
-                    <span class="w-2.5 h-2.5 rounded-full ml-1.5" style="background:var(--scanner-state-success);"></span>在线
-                    <span class="w-2.5 h-2.5 rounded-full ml-1.5" style="background:var(--scanner-state-warning);"></span>未知
+                <div class="flex items-center gap-3 flex-wrap">
+                  <span id="result-meta" class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-background border border-border text-[11.5px] font-semibold text-foreground whitespace-nowrap shadow-1">
+                    <i data-lucide="database" class="w-3.5 h-3.5 text-primary"></i>
+                    显示 <span id="device-count" class="font-black">0</span> 台 · <span id="device-cidr" class="scanner-mono">-</span>
                   </span>
-                  <div id="device-filters" class="inline-flex items-center rounded-md border border-border bg-background p-0.5" style="display:inline-flex;">
-                    <button data-filter="all" class="filter-btn px-3 py-1.5 text-xs font-medium rounded bg-primary text-primary-foreground whitespace-nowrap">全部</button>
-                    <button data-filter="online" class="filter-btn px-3 py-1.5 text-xs font-medium rounded text-muted-foreground hover:bg-muted transition whitespace-nowrap">在线</button>
-                    <button data-filter="services" class="filter-btn px-3 py-1.5 text-xs font-medium rounded text-muted-foreground hover:bg-muted transition whitespace-nowrap">有服务</button>
-                    <button data-filter="pending" class="filter-btn px-3 py-1.5 text-xs font-medium rounded text-muted-foreground hover:bg-muted transition whitespace-nowrap">待补证据</button>
-                    <button data-filter="unknown" class="filter-btn px-3 py-1.5 text-xs font-medium rounded text-muted-foreground hover:bg-muted transition whitespace-nowrap">未知</button>
+                  <span id="topo-legend" class="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-background border border-border text-[11px] font-semibold text-muted-foreground whitespace-nowrap shadow-1" style="display:none;">
+                    <span class="inline-flex items-center gap-1"><span class="w-2.5 h-2.5 rounded-full" style="background:var(--scanner-primary);"></span>本机</span>
+                    <span class="inline-flex items-center gap-1 ml-1"><span class="w-2.5 h-2.5 rounded-full" style="background:var(--scanner-state-success);"></span>在线</span>
+                    <span class="inline-flex items-center gap-1 ml-1"><span class="w-2.5 h-2.5 rounded-full" style="background:var(--scanner-state-warning);"></span>未知</span>
+                  </span>
+                  <div id="device-filters" class="inline-flex items-center rounded-xl border border-border bg-background p-1 shadow-1" style="display:inline-flex;">
+                    <button data-filter="all" class="filter-btn px-3.5 py-1.5 text-[11.5px] font-semibold rounded-lg bg-primary text-primary-foreground whitespace-nowrap">全部</button>
+                    <button data-filter="online" class="filter-btn px-3.5 py-1.5 text-[11.5px] font-semibold rounded-lg text-muted-foreground hover:bg-muted transition whitespace-nowrap">在线</button>
+                    <button data-filter="services" class="filter-btn px-3.5 py-1.5 text-[11.5px] font-semibold rounded-lg text-muted-foreground hover:bg-muted transition whitespace-nowrap">有服务</button>
+                    <button data-filter="pending" class="filter-btn px-3.5 py-1.5 text-[11.5px] font-semibold rounded-lg text-muted-foreground hover:bg-muted transition whitespace-nowrap">待补证据</button>
+                    <button data-filter="unknown" class="filter-btn px-3.5 py-1.5 text-[11.5px] font-semibold rounded-lg text-muted-foreground hover:bg-muted transition whitespace-nowrap">未知</button>
                   </div>
                 </div>
               </div>
 
               <!-- Tab panel: topology -->
               <div id="panel-topology" style="display:none;">
-                <div id="topology-container" style="position:relative; width:100%; min-height:300px; overflow:hidden;">
-                  <!-- 统计卡片 -->
-                  <div id="topo-stats" style="position:absolute; top:12px; left:12px; z-index:10; display:none;">
-                    <div class="flex items-center gap-2 px-3 py-2 rounded-lg border border-border bg-card/95 backdrop-blur shadow-1">
-                      <span class="text-sm font-semibold text-foreground">拓扑</span>
-                      <span class="text-xs text-muted-foreground"><span id="topo-stat-nodes" class="scanner-mono font-semibold text-foreground">0</span> 个节点</span>
-                      <span class="text-xs text-muted-foreground">在线 <span id="topo-stat-online" class="scanner-mono font-semibold" style="color:var(--scanner-state-success);">0</span></span>
-                      <span class="text-xs text-muted-foreground">服务 <span id="topo-stat-services" class="scanner-mono font-semibold text-foreground">0</span></span>
+                <div id="topology-container" style="position:relative; width:100%; min-height:300px; overflow:visible;">
+                  <!-- 统计卡片（更饱满） -->
+                  <div id="topo-stats" style="position:absolute; top:16px; left:16px; z-index:10; display:none;">
+                    <div class="flex items-center gap-2.5 px-4 py-2.5 rounded-xl border border-border bg-card/95 backdrop-blur shadow-2">
+                      <div class="w-7 h-7 rounded-lg bg-primary/10 text-primary flex items-center justify-center shrink-0">
+                        <i data-lucide="network" class="w-3.5 h-3.5"></i>
+                      </div>
+                      <span class="text-[13px] font-bold text-foreground">网络拓扑</span>
+                      <span class="h-4 w-px bg-border mx-0.5"></span>
+                      <span class="text-[11.5px] font-semibold text-muted-foreground"><span id="topo-stat-nodes" class="scanner-mono font-black text-foreground text-[13px]">0</span> 节点</span>
+                      <span class="text-[11.5px] font-semibold text-muted-foreground">在线 <span id="topo-stat-online" class="scanner-mono font-black text-[13px]" style="color:var(--scanner-state-success);">0</span></span>
+                      <span class="text-[11.5px] font-semibold text-muted-foreground">服务 <span id="topo-stat-services" class="scanner-mono font-black text-foreground text-[13px]">0</span></span>
                     </div>
                   </div>
 
-                  <!-- 缩放控件 -->
-                  <div id="topo-zoom" style="position:absolute; bottom:12px; right:12px; z-index:10; display:none;">
-                    <div class="flex flex-col rounded-lg border border-border bg-card/95 backdrop-blur shadow-1 overflow-hidden">
-                      <button id="topo-zoom-in" class="w-8 h-8 flex items-center justify-center text-foreground hover:bg-muted transition" title="放大">
-                        <i data-lucide="plus" class="w-4 h-4"></i>
+                  <!-- 缩放控件（加厚） -->
+                  <div id="topo-zoom" style="position:absolute; bottom:16px; right:16px; z-index:10; display:none;">
+                    <div class="flex flex-col rounded-xl border border-border bg-card/95 backdrop-blur shadow-2 overflow-hidden">
+                      <button id="topo-zoom-in" class="w-9 h-9 flex items-center justify-center text-foreground hover:bg-muted transition" title="放大">
+                        <i data-lucide="plus" class="w-4.5 h-4.5"></i>
                       </button>
                       <div class="h-px bg-border"></div>
-                      <button id="topo-zoom-out" class="w-8 h-8 flex items-center justify-center text-foreground hover:bg-muted transition" title="缩小">
-                        <i data-lucide="minus" class="w-4 h-4"></i>
+                      <button id="topo-zoom-out" class="w-9 h-9 flex items-center justify-center text-foreground hover:bg-muted transition" title="缩小">
+                        <i data-lucide="minus" class="w-4.5 h-4.5"></i>
                       </button>
                       <div class="h-px bg-border"></div>
-                      <button id="topo-zoom-fit" class="w-8 h-8 flex items-center justify-center text-foreground hover:bg-muted transition" title="适应">
+                      <button id="topo-zoom-fit" class="w-9 h-9 flex items-center justify-center text-foreground hover:bg-muted transition" title="适应">
                         <i data-lucide="maximize" class="w-4 h-4"></i>
                       </button>
                     </div>
@@ -2394,18 +2660,18 @@ body {
                   <!-- 画布 -->
                   <div id="topology-canvas" style="position:relative; width:100%; transform-origin: top left; transition: transform 0.2s ease;">
                     <!-- SVG 连线层 -->
-                    <svg id="topology-edges" style="position:absolute; inset:0; width:100%; height:100%; pointer-events:none;" xmlns="http://www.w3.org/2000/svg"></svg>
+                    <svg id="topology-edges" style="position:absolute; top:0; left:0; pointer-events:none;" xmlns="http://www.w3.org/2000/svg"></svg>
                     <!-- 节点层 -->
-                    <div id="topology-nodes" style="position:relative; width:100%; height:100%;"></div>
+                    <div id="topology-nodes" style="position:relative; width:100%;"></div>
                   </div>
 
-                  <!-- 空状态 -->
-                  <div id="topo-empty" style="position:absolute; inset:0; display:flex; align-items:center; justify-content:center; flex-direction:column; text-align:center; color:var(--scanner-muted-foreground);">
-                    <div style="width:48px; height:48px; border-radius:50%; background:var(--scanner-muted); display:flex; align-items:center; justify-content:center; margin-bottom:12px;">
-                      <i data-lucide="network" style="width:24px; height:24px;"></i>
+                  <!-- 空状态（加大视觉权重） -->
+                  <div id="topo-empty" style="position:absolute; inset:0; display:flex; align-items:center; justify-content:center; flex-direction:column; text-align:center; color:var(--scanner-muted-foreground); padding:80px 20px;">
+                    <div style="width:72px; height:72px; border-radius:24px; background: linear-gradient(135deg, var(--scanner-muted), var(--scanner-primary-50)); display:flex; align-items:center; justify-content:center; margin-bottom:16px; box-shadow: 0 8px 24px -8px rgba(0,0,0,0.1);">
+                      <i data-lucide="network" style="width:32px; height:32px; color:var(--scanner-primary);"></i>
                     </div>
-                    <p style="font-size:14px; font-weight:500; color:var(--scanner-ink); margin-bottom:4px;">暂无拓扑数据</p>
-                    <p style="font-size:12px;">点击开始扫描生成网络拓扑</p>
+                    <p style="font-size:16px; font-weight:700; color:var(--scanner-ink); margin-bottom:6px; letter-spacing:-0.01em;">暂无拓扑数据</p>
+                    <p style="font-size:12.5px; color:var(--scanner-muted-foreground); max-width:320px;">点击「开始扫描」，将自动绘制本机 · 网关 · 中间设备 · 终端的层级网络关系图</p>
                   </div>
                 </div>
               </div>
@@ -2415,25 +2681,26 @@ body {
                 <div data-table-wrap>
                   <table data-table>
                     <thead>
-                      <tr class="border-b border-border bg-muted/50 text-left text-xs text-muted-foreground">
-                        <th class="px-4 py-3 font-medium">IP 地址</th>
-                        <th class="px-4 py-3 font-medium">类型</th>
-                        <th class="px-4 py-3 font-medium">状态</th>
-                        <th class="px-4 py-3 font-medium">主机 / MAC</th>
-                        <th class="px-4 py-3 font-medium">服务</th>
-                        <th class="px-4 py-3 font-medium">延迟</th>
+                      <tr class="border-b border-border text-left text-[11px] font-semibold uppercase tracking-wide text-muted-foreground" style="background: linear-gradient(180deg, var(--scanner-muted), var(--scanner-card)); border-bottom: 1.5px solid var(--scanner-border);">
+                        <th class="px-5 py-4 font-bold">IP 地址</th>
+                        <th class="px-5 py-4 font-bold">类型</th>
+                        <th class="px-5 py-4 font-bold">状态</th>
+                        <th class="px-5 py-4 font-bold">主机 / MAC</th>
+                        <th class="px-5 py-4 font-bold">服务</th>
+                        <th class="px-5 py-4 font-bold">延迟</th>
                       </tr>
                     </thead>
                     <tbody id="device-table-body" class="text-sm">
                     </tbody>
                   </table>
                 </div>
-                <div id="empty-state" style="display:none;" class="flex-col items-center justify-center p-10 text-center text-muted-foreground">
-                  <div class="w-12 h-12 rounded-full bg-muted flex items-center justify-center mb-3">
-                    <i data-lucide="search" class="w-6 h-6 text-muted-foreground"></i>
+                <!-- 空状态（加大） -->
+                <div id="empty-state" style="display:none;" class="flex-col items-center justify-center py-20 text-center text-muted-foreground">
+                  <div class="w-16 h-16 rounded-2xl bg-muted flex items-center justify-center mb-4" style="background: linear-gradient(135deg, var(--scanner-muted), var(--scanner-primary-50)); box-shadow:0 8px 24px -8px rgba(0,0,0,0.08);">
+                    <i data-lucide="search" class="w-7 h-7 text-primary"></i>
                   </div>
-                  <p class="text-sm font-medium text-foreground mb-1">暂无扫描结果</p>
-                  <p class="text-xs">点击开始扫描发现本地网络设备。</p>
+                  <p class="text-[15px] font-bold text-foreground mb-1.5">暂无扫描结果</p>
+                  <p class="text-[12px] text-muted-foreground max-w-sm mx-auto leading-relaxed">点击左上角「开始扫描」按钮即可自动发现本地网络设备信息与开放服务端口</p>
                 </div>
               </div>
             </section>
@@ -2520,130 +2787,132 @@ body {
           <h3 id="detail-title">设备详情</h3>
           <p id="detail-subtitle">-</p>
         </div>
-        <div id="detail-ip-hero" class="drawer-ip-hero">
-          <div class="label">IP 地址</div>
-          <div id="detail-ip-value" class="value">-</div>
-          <div id="detail-ip-meta" class="meta">-</div>
-        </div>
-        <div id="detail-body" class="drawer-body">
-        </div>
+        <div class="drawer-scroll">
+          <div id="detail-ip-hero" class="drawer-ip-hero">
+            <div class="label">IP 地址</div>
+            <div id="detail-ip-value" class="value">-</div>
+            <div id="detail-ip-meta" class="meta">-</div>
+          </div>
+          <div id="detail-body" class="drawer-body">
+          </div>
 
-        <!-- Ping 连通性测试面板 -->
-        <div class="action-panel" id="ping-panel">
-          <div class="action-panel-header" data-toggle="ping-panel">
-            <div class="action-panel-title">
-              <i data-lucide="activity"></i>
-              Ping 连通性测试
+          <!-- Ping 连通性测试面板 -->
+          <div class="action-panel" id="ping-panel">
+            <div class="action-panel-header" data-toggle="ping-panel">
+              <div class="action-panel-title">
+                <i data-lucide="activity"></i>
+                Ping 连通性测试
+              </div>
+              <i data-lucide="chevron-down" class="action-panel-toggle"></i>
             </div>
-            <i data-lucide="chevron-down" class="action-panel-toggle"></i>
-          </div>
-          <div class="action-panel-body">
-            <div class="action-panel-actions">
-              <button class="action-btn primary" id="ping-run-btn">
-                <i data-lucide="play"></i> 开始 Ping（5 次）
-              </button>
-              <button class="action-btn" id="ping-clear-btn">
-                <i data-lucide="rotate-ccw"></i> 清空
-              </button>
-            </div>
-            <div class="action-panel-hint">连续发送 5 个 ICMP 探测包，统计延迟、丢包率与抖动。</div>
-            <div id="ping-result">
-              <div class="port-empty">点击"开始 Ping"进行连通性测试</div>
-            </div>
-          </div>
-        </div>
-
-        <!-- 端口扫描面板 -->
-        <div class="action-panel" id="portscan-panel">
-          <div class="action-panel-header" data-toggle="portscan-panel">
-            <div class="action-panel-title">
-              <i data-lucide="git-branch"></i>
-              端口扫描
-            </div>
-            <i data-lucide="chevron-down" class="action-panel-toggle"></i>
-          </div>
-          <div class="action-panel-body">
-            <div class="action-panel-actions">
-              <button class="action-btn primary" id="portscan-run-btn">
-                <i data-lucide="play"></i> 扫描常用端口
-              </button>
-              <button class="action-btn" id="portscan-full-btn">
-                <i data-lucide="layers"></i> 全端口（1-1024）
-              </button>
-            </div>
-            <div class="action-panel-hint">检测目标设备开放的网络服务端口，识别高危端口（Telnet/RDP/SMB 等）。</div>
-            <div id="portscan-result">
-              <div class="port-empty">点击"扫描常用端口"开始检测</div>
-            </div>
-          </div>
-        </div>
-
-        <!-- AI 分析面板 -->
-        <div class="action-panel" id="ai-panel">
-          <div class="action-panel-header" data-toggle="ai-panel">
-            <div class="action-panel-title">
-              <i data-lucide="sparkles"></i>
-              AI 智能分析
-            </div>
-            <i data-lucide="chevron-down" class="action-panel-toggle"></i>
-          </div>
-          <div class="action-panel-body">
-            <!-- 操作区（与 Ping/端口扫描面板统一：action-btn 横排 + hint 说明） -->
-            <div id="ai-analyze-section">
-              <div class="action-panel-actions ai-action-row">
-                <!-- 分析类型分组（保留 .ai-type-btn 类名，JS 仍可用 querySelectorAll 命中） -->
-                <div class="ai-analyze-types" role="group" aria-label="分析类型">
-                  <button type="button" class="action-btn ai-type-btn ai-type-btn-first" data-type="profile">
-                    <i data-lucide="user-search"></i> 用户画像<span class="ai-kbd">Alt+1</span>
-                  </button>
-                  <button type="button" class="action-btn ai-type-btn ai-type-btn-mid" data-type="security">
-                    <i data-lucide="shield-alert"></i> 安全风险<span class="ai-kbd">Alt+2</span>
-                  </button>
-                  <button type="button" class="action-btn ai-type-btn primary ai-type-btn-last" data-type="full">
-                    <i data-lucide="brain"></i> 综合分析<span class="ai-kbd">Alt+3</span>
-                  </button>
-                </div>
-                <!-- 配置 AI 模型入口（保留 id=ai-config-link，JS click 绑定保持；样式升级为 action-btn ghost：可见度+点击区提升） -->
-                <button type="button" class="action-btn ghost ai-config-btn" id="ai-config-link">
-                  <i data-lucide="settings"></i> 配置 AI 模型
+            <div class="action-panel-body">
+              <div class="action-panel-actions">
+                <button class="action-btn primary" id="ping-run-btn">
+                  <i data-lucide="play"></i> 开始 Ping（5 次）
+                </button>
+                <button class="action-btn" id="ping-clear-btn">
+                  <i data-lucide="rotate-ccw"></i> 清空
                 </button>
               </div>
-              <!-- 说明（与 Ping/端口面板的 action-panel-hint 同一视觉） -->
-              <div class="action-panel-hint">
-                基于设备类型、开放端口、厂商 OUI、安全告警等上下文，AI 自动生成使用者画像、风险清单与加固建议（报告支持一键复制）。
+              <div class="action-panel-hint">连续发送 5 个 ICMP 探测包，统计延迟、丢包率与抖动。</div>
+              <div id="ping-result">
+                <div class="port-empty">点击"开始 Ping"进行连通性测试</div>
               </div>
             </div>
-            <!-- 结果区（保留 id/class 完全不变，JS innerHTML / querySelector 全兼容） -->
-            <div id="ai-result">
-              <div class="ai-empty">
-                <div class="ai-empty-head">
-                  <div class="ai-empty-icon">
-                    <i data-lucide="sparkles"></i>
+          </div>
+
+          <!-- 端口扫描面板 -->
+          <div class="action-panel" id="portscan-panel">
+            <div class="action-panel-header" data-toggle="portscan-panel">
+              <div class="action-panel-title">
+                <i data-lucide="git-branch"></i>
+                端口扫描
+              </div>
+              <i data-lucide="chevron-down" class="action-panel-toggle"></i>
+            </div>
+            <div class="action-panel-body">
+              <div class="action-panel-actions">
+                <button class="action-btn primary" id="portscan-run-btn">
+                  <i data-lucide="play"></i> 扫描常用端口
+                </button>
+                <button class="action-btn" id="portscan-full-btn">
+                  <i data-lucide="layers"></i> 全端口（1-1024）
+                </button>
+              </div>
+              <div class="action-panel-hint">检测目标设备开放的网络服务端口，识别高危端口（Telnet/RDP/SMB 等）。</div>
+              <div id="portscan-result">
+                <div class="port-empty">点击"扫描常用端口"开始检测</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- AI 分析面板 -->
+          <div class="action-panel" id="ai-panel">
+            <div class="action-panel-header" data-toggle="ai-panel">
+              <div class="action-panel-title">
+                <i data-lucide="sparkles"></i>
+                AI 智能分析
+              </div>
+              <i data-lucide="chevron-down" class="action-panel-toggle"></i>
+            </div>
+            <div class="action-panel-body">
+              <!-- 操作区（与 Ping/端口扫描面板统一：action-btn 横排 + hint 说明） -->
+              <div id="ai-analyze-section">
+                <div class="action-panel-actions ai-action-row">
+                  <!-- 分析类型分组（保留 .ai-type-btn 类名，JS 仍可用 querySelectorAll 命中） -->
+                  <div class="ai-analyze-types" role="group" aria-label="分析类型">
+                    <button type="button" class="action-btn ai-type-btn ai-type-btn-first" data-type="profile">
+                      <i data-lucide="user-search"></i> 用户画像<span class="ai-kbd">Alt+1</span>
+                    </button>
+                    <button type="button" class="action-btn ai-type-btn ai-type-btn-mid" data-type="security">
+                      <i data-lucide="shield-alert"></i> 安全风险<span class="ai-kbd">Alt+2</span>
+                    </button>
+                    <button type="button" class="action-btn ai-type-btn primary ai-type-btn-last" data-type="full">
+                      <i data-lucide="brain"></i> 综合分析<span class="ai-kbd">Alt+3</span>
+                    </button>
                   </div>
-                  <div class="ai-empty-text">
-                    <div class="ai-empty-title">选择类型，开始智能分析</div>
-                    <div class="ai-empty-desc">点击上方「用户画像 / 安全风险 / 综合分析」按钮，AI 将针对当前选中设备输出专属分析报告</div>
-                  </div>
+                  <!-- 配置 AI 模型入口（保留 id=ai-config-link，JS click 绑定保持；样式升级为 action-btn ghost：可见度+点击区提升） -->
+                  <button type="button" class="action-btn ghost ai-config-btn" id="ai-config-link">
+                    <i data-lucide="settings"></i> 配置 AI 模型
+                  </button>
                 </div>
-                <div class="ai-empty-steps">
-                  <div class="ai-step">
-                    <span class="ai-step-no">1</span>
-                    <span class="ai-step-text">在侧栏「设备列表」选择目标设备（未选会提示）</span>
-                  </div>
-                  <div class="ai-step">
-                    <span class="ai-step-no">2</span>
-                    <span class="ai-step-text">点击上方按钮选择分析类型，等待模型响应（实时显示耗时）</span>
-                  </div>
-                  <div class="ai-step">
-                    <span class="ai-step-no">3</span>
-                    <span class="ai-step-text">查看报告，可使用右上角「复制」「重新分析」操作</span>
-                  </div>
+                <!-- 说明（与 Ping/端口面板的 action-panel-hint 同一视觉） -->
+                <div class="action-panel-hint">
+                  基于设备类型、开放端口、厂商 OUI、安全告警等上下文，AI 自动生成使用者画像、风险清单与加固建议（报告支持一键复制）。
                 </div>
-                <div class="ai-empty-tags">
-                  <span class="ai-tag">使用者画像</span>
-                  <span class="ai-tag">开放端口</span>
-                  <span class="ai-tag">高危服务</span>
-                  <span class="ai-tag">加固建议</span>
+              </div>
+              <!-- 结果区（保留 id/class 完全不变，JS innerHTML / querySelector 全兼容） -->
+              <div id="ai-result">
+                <div class="ai-empty">
+                  <div class="ai-empty-head">
+                    <div class="ai-empty-icon">
+                      <i data-lucide="sparkles"></i>
+                    </div>
+                    <div class="ai-empty-text">
+                      <div class="ai-empty-title">选择类型，开始智能分析</div>
+                      <div class="ai-empty-desc">点击上方「用户画像 / 安全风险 / 综合分析」按钮，AI 将针对当前选中设备输出专属分析报告</div>
+                    </div>
+                  </div>
+                  <div class="ai-empty-steps">
+                    <div class="ai-step">
+                      <span class="ai-step-no">1</span>
+                      <span class="ai-step-text">在侧栏「设备列表」选择目标设备（未选会提示）</span>
+                    </div>
+                    <div class="ai-step">
+                      <span class="ai-step-no">2</span>
+                      <span class="ai-step-text">点击上方按钮选择分析类型，等待模型响应（实时显示耗时）</span>
+                    </div>
+                    <div class="ai-step">
+                      <span class="ai-step-no">3</span>
+                      <span class="ai-step-text">查看报告，可使用右上角「复制」「重新分析」操作</span>
+                    </div>
+                  </div>
+                  <div class="ai-empty-tags">
+                    <span class="ai-tag">使用者画像</span>
+                    <span class="ai-tag">开放端口</span>
+                    <span class="ai-tag">高危服务</span>
+                    <span class="ai-tag">加固建议</span>
+                  </div>
                 </div>
               </div>
             </div>
@@ -2957,42 +3226,83 @@ body {
 
     <style id="critical-layout">
       :root { --scanner-sidebar-width: 260px; }
-      [data-viewport-mode="app-shell"] { display: flex; height: 100vh; overflow: hidden; }
+      html, body { margin: 0; padding: 0; min-height: 100vh; }
+      [data-viewport-mode="app-shell"] { display: flex; min-height: 100vh; align-items: stretch; }
       [data-shell="sidebar"] {
-        position: fixed;
-        inset: 0 auto 0 0;
+        position: sticky;
+        top: 0;
+        align-self: flex-start;
         width: var(--scanner-sidebar-width);
+        max-height: 100vh;
         overflow-y: auto;
         overflow-x: hidden;
         border-right: 1px solid var(--scanner-border);
         background: var(--scanner-card);
         z-index: 40;
+        flex: 0 0 auto;
       }
       [data-shell="main"] {
-        margin-left: var(--scanner-sidebar-width);
-        flex: 1 1 0%;
+        flex: 1 1 auto;
         min-width: 0;
-        height: 100vh;
+        min-height: 100vh;
+        margin-left: 0 !important;
         display: flex;
         flex-direction: column;
       }
       [data-scroll-region="primary"] {
-        flex: 1 1 0%;
+        flex: 1 1 auto;
         min-height: 0;
-        overflow-y: auto;
-        overflow-x: hidden;
+        overflow-y: visible;
+        overflow-x: visible;
       }
       [data-table-wrap] { min-width: 0; overflow-x: auto; }
       [data-table] { min-width: 680px; width: 100%; border-collapse: collapse; }
       .scanner-mono { font-family: var(--scanner-font-mono); }
 
+      /* 拓扑图自适应：容器根据画布内容自然撑大 */
+      #topology-container {
+        height: auto !important;
+        padding-bottom: 40px; /* 给底部缩放控件留空间 */
+      }
+      #topology-canvas {
+        height: auto !important;
+      }
+      #topology-nodes,
+      #topology-edges {
+        display: block;
+      }
+
+      /* 抽屉高度自适应：内容多时不强制 100vh，改为 min 至 max 范围 */
+      .drawer-panel {
+        height: auto !important;
+        min-height: 60vh;
+        max-height: 100vh;
+      }
+      .drawer-body {
+        flex: 1 1 auto;
+        overflow-y: visible;
+      }
+
+      /* 结果区域不自切内容 */
+      [data-region="results"] {
+        overflow: visible !important;
+      }
+
+      /* 内嵌滚动：仅在有 max-height 的面板上启用（端口/AI/Ping 结果等） */
+      #ping-result,
+      #ai-result,
+      #portscan-result .port-list {
+        overflow-y: auto;
+      }
+
       /* 全局隐藏滚动条，保留内嵌滚动功能 */
       [data-shell="sidebar"],
-      [data-scroll-region="primary"],
       [data-table-wrap],
-      .drawer-body,
       .history-list,
-      .no-scrollbar {
+      .no-scrollbar,
+      #ping-result,
+      #ai-result,
+      #portscan-result .port-list {
         -ms-overflow-style: none;
         scrollbar-width: none;
       }
@@ -3001,7 +3311,10 @@ body {
       [data-table-wrap]::-webkit-scrollbar,
       .drawer-body::-webkit-scrollbar,
       .history-list::-webkit-scrollbar,
-      .no-scrollbar::-webkit-scrollbar {
+      .no-scrollbar::-webkit-scrollbar,
+      #ping-result::-webkit-scrollbar,
+      #ai-result::-webkit-scrollbar,
+      #portscan-result .port-list::-webkit-scrollbar {
         width: 0;
         height: 0;
         display: none;
