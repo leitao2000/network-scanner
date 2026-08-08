@@ -460,7 +460,8 @@ class Scanner extends EventEmitter {
 
     this.isScanning = true;
     this.shouldStop = false;
-    this.activeProcesses.clear();
+    // 先杀遗留子进程，再清空引用
+    this.killAllProcesses();
 
     const localInfo = await Scanner.getLocalInfo();
     const activeAdapter = localInfo.activeAdapter || options.adapter;
@@ -637,9 +638,24 @@ class Scanner extends EventEmitter {
       });
 
       const portScanPorts = [21, 22, 23, 25, 53, 80, 110, 135, 139, 143, 443, 445, 993, 995, 1900, 3306, 3389, 5353, 8080, 8443, 9100];
-      const portScanResults = await Promise.all(
-        devices.map(device => this.scanPorts(device.ip, portScanPorts))
-      );
+      // 设备级并发限制：同时最多扫描 10 台设备的端口
+      const DEVICE_CONCURRENCY = 10;
+      const portScanResults = new Array(devices.length).fill([]);
+      let devIdx = 0;
+
+      async function portScanWorker() {
+        while (devIdx < devices.length) {
+          if (this.shouldStop) return;
+          const i = devIdx++;
+          portScanResults[i] = await this.scanPorts(devices[i].ip, portScanPorts);
+        }
+      }
+
+      const portWorkers = [];
+      for (let i = 0; i < Math.min(DEVICE_CONCURRENCY, devices.length); i++) {
+        portWorkers.push(portScanWorker.call(this));
+      }
+      await Promise.all(portWorkers);
       for (let i = 0; i < devices.length; i++) {
         devices[i].services = portScanResults[i];
         this.emit('deviceUpdate', devices[i]);
@@ -674,10 +690,23 @@ class Scanner extends EventEmitter {
     if (!Scanner.isValidIPv4(host)) return [];
     const openPorts = [];
 
-    // 并行扫描所有端口
-    const results = await Promise.all(
-      ports.map(port => this.checkPort(host, port, 800))
-    );
+    // 并发限制：同时最多 50 个端口探测
+    const CONCURRENCY = 50;
+    const results = new Array(ports.length).fill(false);
+    let idx = 0;
+
+    async function worker() {
+      while (idx < ports.length) {
+        const i = idx++;
+        results[i] = await this.checkPort(host, ports[i], 800);
+      }
+    }
+
+    const workers = [];
+    for (let i = 0; i < Math.min(CONCURRENCY, ports.length); i++) {
+      workers.push(worker.call(this));
+    }
+    await Promise.all(workers);
 
     for (let i = 0; i < ports.length; i++) {
       if (results[i]) {
@@ -754,6 +783,542 @@ class Scanner extends EventEmitter {
   stop() {
     this.shouldStop = true;
     this.killAllProcesses();
+  }
+
+  // ─────────────────────────────────────────────────────────
+  //  网络诊断工具扩展
+  // ─────────────────────────────────────────────────────────
+
+  /**
+   * Traceroute 路由追踪（跨平台）
+   * Windows: tracert  Linux/Mac: traceroute
+   * @returns {Promise<{success, hops, error?}>} hops: [{hop, ip, rtt, timeout}]
+   */
+  static async traceroute(host, maxHops = 15, timeout = 1500) {
+    if (!Scanner.isValidIPv4(host) && !/^[a-zA-Z0-9.\-]+$/.test(host)) {
+      return { success: false, hops: [], error: '无效的目标主机' };
+    }
+    const isWin = process.platform === 'win32';
+    const cmd = isWin ? 'tracert' : 'traceroute';
+    const args = isWin
+      ? ['-d', '-h', String(maxHops), '-w', String(timeout), host]
+      : ['-n', '-m', String(maxHops), '-w', String(Math.ceil(timeout / 1000)), '-q', '1', host];
+
+    return new Promise((resolve) => {
+      const proc = spawn(cmd, args, { shell: false });
+      let stdout = '';
+      const timer = setTimeout(() => { proc.kill(); resolve({ success: true, hops: parseTracert(stdout, isWin), note: '追踪超时已截断' }); }, maxHops * timeout + 5000);
+
+      proc.stdout.on('data', (d) => { stdout += d.toString(); });
+      proc.stderr.on('data', () => {});
+      proc.on('error', () => { clearTimeout(timer); resolve({ success: false, hops: [], error: `无法启动 ${cmd}（可能未安装）` }); });
+      proc.on('close', () => {
+        clearTimeout(timer);
+        resolve({ success: true, hops: parseTracert(stdout, isWin) });
+      });
+    });
+
+    function parseTracert(text, isWin) {
+      const hops = [];
+      const lines = text.split('\n');
+      for (const line of lines) {
+        // Windows: "  1     1 ms     1 ms     1 ms  192.168.1.1"
+        // Linux:   " 1  192.168.1.1 (192.168.1.1)  1.234 ms  1.456 ms  1.789 ms"
+        if (isWin) {
+          const m = line.match(/^\s*(\d+)\s+(.+?)\s*$/);
+          if (!m) continue;
+          const hopNum = parseInt(m[1], 10);
+          const rest = m[2];
+          // 提取最后一个 IP
+          const ipMatch = rest.match(/(\d+\.\d+\.\d+\.\d+)/g) || [];
+          const rttMatches = rest.match(/[\d<]+(?:\.\d+)?\s*ms/g) || [];
+          if (ipMatch.length || rttMatches.length) {
+            const ip = ipMatch[ipMatch.length - 1] || '*';
+            const rtts = rttMatches.map(r => /</.test(r) ? 0 : parseFloat(r)).filter(n => !isNaN(n));
+            const rtt = rtts.length ? Math.min(...rtts) : null;
+            const timeout = /(\*|\s<\d+\s*ms)/.test(rest) && !rtts.length;
+            hops.push({ hop: hopNum, ip, rtt, timeout });
+          }
+        } else {
+          const m = line.match(/^\s*(\d+)\s+(.*)$/);
+          if (!m) continue;
+          const hopNum = parseInt(m[1], 10);
+          const rest = m[2];
+          if (/^\*/.test(rest.trim())) {
+            hops.push({ hop: hopNum, ip: '*', rtt: null, timeout: true });
+            continue;
+          }
+          const ipMatch = rest.match(/(\d+\.\d+\.\d+\.\d+)/);
+          const rttMatch = rest.match(/([\d.]+)\s*ms/);
+          hops.push({
+            hop: hopNum,
+            ip: ipMatch ? ipMatch[1] : '*',
+            rtt: rttMatch ? parseFloat(rttMatch[1]) : null,
+            timeout: false
+          });
+        }
+      }
+      return hops;
+    }
+  }
+
+  /**
+   * Wake-on-LAN 唤醒：发送 Magic Packet
+   * @param {string} mac 目标 MAC
+   * @param {string} [broadcast] 广播地址（默认 255.255.255.255）
+   * @returns {Promise<{success, sent, error?}>}
+   */
+  static wakeOnLan(mac, broadcast = '255.255.255.255') {
+    return new Promise((resolve) => {
+      let dgram;
+      try { dgram = require('dgram'); } catch (e) { return resolve({ success: false, sent: 0, error: 'dgram 模块不可用' }); }
+
+      const normalized = (mac || '').replace(/[-:.\s]/g, '').toUpperCase();
+      if (!/^[0-9A-F]{12}$/.test(normalized)) {
+        return resolve({ success: false, sent: 0, error: 'MAC 地址格式无效' });
+      }
+
+      // Magic Packet: 6 字节 0xFF + 16 次目标 MAC
+      const macBytes = Buffer.from(normalized, 'hex');
+      const magic = Buffer.alloc(6 + 16 * 6, 0xff);
+      for (let i = 0; i < 16; i++) {
+        macBytes.copy(magic, 6 + i * 6);
+      }
+
+      const sock = dgram.createSocket('udp4');
+      sock.on('error', (err) => {
+        try { sock.close(); } catch {}
+        resolve({ success: false, sent: 0, error: err.message });
+      });
+
+      sock.bind(() => {
+        sock.setBroadcast(true);
+        sock.send(magic, 0, magic.length, 9, broadcast, (err) => {
+          try { sock.close(); } catch {}
+          if (err) resolve({ success: false, sent: 0, error: err.message });
+          else resolve({ success: true, sent: magic.length });
+        });
+      });
+
+      setTimeout(() => {
+        try { sock.close(); } catch {}
+        resolve({ success: false, sent: 0, error: '发送超时' });
+      }, 3000);
+    });
+  }
+
+  /**
+   * UDP 端口扫描（单端口）
+   * 策略：发送空 UDP 包，监听响应
+   *  - 收到数据 → 开放(open)
+   *  - ECONNREFUSED → 关闭(closed)
+   *  - 超时 → 开放|过滤(open|filtered，UDP 无响应可能开放也可能被过滤)
+   */
+  static scanUdpPort(host, port, timeout = 1500) {
+    return new Promise((resolve) => {
+      let dgram;
+      try { dgram = require('dgram'); } catch { return resolve({ port, state: 'error', error: 'dgram 不可用' }); }
+
+      const sock = dgram.createSocket('udp4');
+      let done = false;
+      const finish = (state, extra = {}) => {
+        if (done) return;
+        done = true;
+        clearTimeout(timer);
+        try { sock.close(); } catch {}
+        resolve({ port, state, ...extra });
+      };
+
+      const timer = setTimeout(() => finish('open|filtered', { note: 'UDP 无响应（可能开放或被过滤）' }), timeout);
+
+      sock.on('error', (err) => {
+        if (err.code === 'ECONNREFUSED') finish('closed');
+        else finish('error', { error: err.message });
+      });
+      sock.on('message', (msg) => finish('open', { banner: msg.toString('utf8').slice(0, 200) }));
+
+      sock.bind(() => {
+        const payload = Buffer.alloc(0);
+        sock.send(payload, 0, 0, port, host, (err) => {
+          if (err) finish('error', { error: err.message });
+        });
+      });
+    });
+  }
+
+  /**
+   * 批量 UDP 端口扫描
+   */
+  static async scanUdpPorts(host, ports = [53, 67, 68, 69, 123, 137, 161, 162, 500, 514, 1900, 5353], timeout = 1500) {
+    if (!Scanner.isValidIPv4(host)) return [];
+    const results = await Promise.all(ports.map(p => Scanner.scanUdpPort(host, p, timeout)));
+    const UDP_INFO = {
+      53: { name: 'DNS', risk: 'low' }, 67: { name: 'DHCP Server', risk: 'medium' },
+      68: { name: 'DHCP Client', risk: 'low' }, 69: { name: 'TFTP', risk: 'high' },
+      123: { name: 'NTP', risk: 'low' }, 137: { name: 'NetBIOS Name', risk: 'medium' },
+      161: { name: 'SNMP', risk: 'high' }, 162: { name: 'SNMP Trap', risk: 'medium' },
+      500: { name: 'ISAKMP/IKE', risk: 'medium' }, 514: { name: 'Syslog', risk: 'low' },
+      1900: { name: 'SSDP/UPnP', risk: 'medium' }, 5353: { name: 'mDNS', risk: 'low' }
+    };
+    return results.filter(r => r.state !== 'closed' && r.state !== 'error').map(r => {
+      const info = UDP_INFO[r.port] || {};
+      return { port: r.port, name: info.name || '未知', risk: info.risk || 'low', state: r.state, banner: r.banner || '' };
+    });
+  }
+
+  /**
+   * Banner Grabbing：抓取服务指纹
+   * 对不同协议发送不同探针，解析返回的 Banner
+   */
+  static grabBanner(host, port, timeout = 2500) {
+    return new Promise((resolve) => {
+      const socket = new net.Socket();
+      let resolved = false;
+      let banner = '';
+      const probe = Scanner._getProbeForPort(port);
+
+      const finish = (extra = {}) => {
+        if (resolved) return;
+        resolved = true;
+        clearTimeout(timer);
+        try { socket.destroy(); } catch {}
+        resolve({ port, banner: banner.trim(), probe, ...extra });
+      };
+
+      const timer = setTimeout(() => finish({ timeout: true }), timeout);
+
+      socket.setTimeout(timeout);
+      socket.once('connect', () => {
+        // 主动服务（SSH/FTP/SMTP）会先发欢迎信息；被动服务（HTTP）需要发探针
+        if (probe) {
+          socket.write(probe);
+        }
+        // 等待数据或超时
+      });
+      socket.on('data', (data) => {
+        banner += data.toString('utf8');
+        // 收到足够数据或换行结束就返回
+        if (banner.length > 512 || /\r\n\r\n|\n$/.test(banner)) {
+          finish();
+        }
+      });
+      socket.on('error', (err) => finish({ error: err.message }));
+      socket.on('timeout', () => finish({ timeout: true }));
+      socket.on('close', () => finish());
+
+      socket.connect(port, host);
+    });
+  }
+
+  static _getProbeForPort(port) {
+    // 需要主动发送探针才能获取 Banner 的端口
+    if (port === 80 || port === 8080 || port === 8000 || port === 8888) {
+      return 'HEAD / HTTP/1.0\r\nHost: ' + '\r\nUser-Agent: NetworkScanner/1.0\r\n\r\n';
+    }
+    if (port === 443 || port === 8443) {
+      // HTTPS 需要 TLS，纯 socket 抓不到 banner，返回空探针（会失败）
+      return null;
+    }
+    if (port === 25 || port === 587) {
+      return null; // SMTP 会主动发送 220
+    }
+    if (port === 21 || port === 22 || port === 23 || port === 110 || port === 143 || port === 3306) {
+      return null; // 这些服务会主动发送欢迎信息
+    }
+    // 通用探针
+    return null;
+  }
+
+  /**
+   * 高级端口扫描（含 Banner Grabbing）
+   * @param {number[]} ports
+   * @param {Object} options { grabBanner: true, timeout: 800 }
+   */
+  static async scanPortsAdvanced(host, ports, options = {}) {
+    if (!Scanner.isValidIPv4(host)) return [];
+    const grabBanner = options.grabBanner !== false;
+    const timeout = options.timeout || 800;
+
+    // 1. 并行 TCP 探测
+    const checks = await Promise.all(ports.map(p => this.checkPort(host, p, timeout).then(open => ({ port: p, open }))));
+
+    // 2. 对开放端口抓 Banner
+    const openPorts = checks.filter(c => c.open).map(c => c.port);
+    let bannerMap = {};
+    if (grabBanner && openPorts.length) {
+      const banners = await Promise.all(openPorts.map(p => Scanner.grabBanner(host, p, 2500).catch(() => ({ port: p, banner: '' }))));
+      bannerMap = banners.reduce((m, b) => { m[b.port] = b.banner; return m; }, {});
+    }
+
+    // 3. 组装结果
+    return checks.filter(c => c.open).map(c => {
+      const port = c.port;
+      const info = Scanner.PORT_INFO[port] || {};
+      const banner = bannerMap[port] || '';
+      const parsed = Scanner._parseBanner(banner, port);
+      return {
+        port,
+        name: parsed.name || info.name || '未知服务',
+        desc: info.desc || '',
+        risk: info.risk || 'low',
+        banner,
+        service: parsed.service,
+        version: parsed.version
+      };
+    });
+  }
+
+  /**
+   * 解析 Banner，提取服务名和版本
+   */
+  static _parseBanner(banner, port) {
+    if (!banner) return { name: null, service: null, version: null };
+    const head = banner.split('\n')[0].slice(0, 128);
+    // SSH: SSH-2.0-OpenSSH_8.4
+    let m = head.match(/^SSH-([\d.]+)-(.+)/i);
+    if (m) return { service: 'SSH', name: 'SSH', version: m[2] };
+    // FTP: 220 (vsFTPd 3.0.3)
+    m = head.match(/\((vsFTPd|ProFTPD|Pure-FTPd|FileZilla)[\s\w.]*([\d.]*)/i);
+    if (m) return { service: 'FTP', name: 'FTP', version: (m[1] + ' ' + (m[2] || '')).trim() };
+    if (/^220\s+.*FTP/i.test(head)) return { service: 'FTP', name: 'FTP', version: '' };
+    // HTTP: Server: nginx/1.18.0
+    const srvMatch = banner.match(/^Server:\s*([^\r\n]+)/im);
+    if (srvMatch) return { service: 'HTTP', name: 'HTTP', version: srvMatch[1].trim() };
+    if (/^HTTP\/\d/i.test(head)) {
+      const srv = banner.match(/Server:\s*([^\r\n]+)/i);
+      return { service: 'HTTP', name: 'HTTP', version: srv ? srv[1].trim() : 'Web Server' };
+    }
+    // SMTP: 220 mail ESMTP Postfix
+    if (/^220\s+.*ESMTP\s+(\S+)/i.test(head)) {
+      m = head.match(/^220\s+.*ESMTP\s+(\S+)/i);
+      return { service: 'SMTP', name: 'SMTP', version: m[1] };
+    }
+    // MySQL: 5.7.31-log
+    if (port === 3306 && /^\d+\.\d+\.\d+/.test(head)) return { service: 'MySQL', name: 'MySQL', version: head };
+    // RDP: \x03\x00\x00...
+    if (port === 3389) return { service: 'RDP', name: 'RDP', version: '' };
+    return { service: null, name: null, version: head.slice(0, 60) };
+  }
+
+  /**
+   * 操作系统检测（基于 TTL 和开放端口）
+   * TTL 规则：64=Linux/Mac/Android，128=Windows，255=网络设备（Cisco）
+   */
+  static detectOs(device) {
+    if (!device) return { os: '未知', method: 'none', confidence: 0 };
+    const services = device.services || [];
+    const ports = services.map(s => typeof s === 'object' ? s.port : s);
+    const latency = device.latency;
+
+    // 1. 基于开放端口组合推断
+    const hasWin = [135, 139, 445, 3389].some(p => ports.includes(p));
+    const hasNix = [22, 111, 2049].some(p => ports.includes(p));
+    const hasApple = ports.includes(631) || ports.includes(548);
+    const hasRouter = [23, 161].some(p => ports.includes(p)) && (ports.includes(80) || ports.includes(443));
+
+    const portScore = { windows: 0, linux: 0, macos: 0, network: 0, iot: 0 };
+    if (hasWin) portScore.windows += 3;
+    if (hasNix) portScore.linux += 2;
+    if (hasApple) portScore.macos += 3;
+    if (hasRouter) portScore.network += 2;
+    if (ports.includes(23)) portScore.network += 1;
+    if (ports.includes(5000)) portScore.macos += 1; // AirPlay
+
+    // 2. 基于 ping TTL（如果有 latency，但没有直接 TTL，用启发式）
+    // 注意：原生 ping 的 TTL 需要解析 ping 输出，这里用端口组合为主
+    const best = Object.entries(portScore).sort((a, b) => b[1] - a[1])[0];
+    if (best[1] === 0) {
+      // 没有特征端口，看设备分类
+      const cat = device.category;
+      if (cat === 'computer') return { os: '未知（电脑）', method: 'category', confidence: 0.3 };
+      if (cat === 'phone') return { os: 'Android/iOS', method: 'category', confidence: 0.5 };
+      if (cat === 'router') return { os: '嵌入式 Linux', method: 'category', confidence: 0.5 };
+      if (cat === 'iot') return { os: '嵌入式系统', method: 'category', confidence: 0.4 };
+      return { os: '未知', method: 'none', confidence: 0 };
+    }
+
+    const osMap = {
+      windows: 'Windows',
+      linux: 'Linux/Unix',
+      macos: 'macOS',
+      network: '网络设备（嵌入式 Linux）',
+      iot: 'IoT 嵌入式系统'
+    };
+    const confidence = Math.min(0.9, 0.4 + best[1] * 0.15);
+    return { os: osMap[best[0]], method: 'port-fingerprint', confidence, scores: portScore };
+  }
+
+  /**
+   * DNS 查询（A/AAAA/any）
+   * @param {string} hostname 域名
+   * @param {string} [server] 自定义 DNS 服务器（可选）
+   */
+  static async resolveDns(hostname, server) {
+    const resolver = server ? new dns.Resolver() : dns;
+    if (server) {
+      try {
+        resolver.setServers([server]);
+      } catch (e) {
+        return { success: false, error: '无效的 DNS 服务器: ' + e.message };
+      }
+    }
+    try {
+      const [a, aaaa, cname, mx, txt] = await Promise.all([
+        promisify(resolver.resolve4 || dns.resolve4)(hostname).catch(() => []),
+        promisify(resolver.resolve6 || dns.resolve6)(hostname).catch(() => []),
+        promisify(resolver.resolveCname || dns.resolveCname)(hostname).catch(() => []),
+        promisify(resolver.resolveMx || dns.resolveMx)(hostname).catch(() => []),
+        promisify(resolver.resolveTxt || dns.resolveTxt)(hostname).catch(() => [])
+      ]);
+      return {
+        success: true,
+        hostname,
+        server: server || 'system',
+        A: a, AAAA: aaaa, CNAME: cname,
+        MX: mx, TXT: txt.map(t => t.join(''))
+      };
+    } catch (e) {
+      return { success: false, error: e.message };
+    }
+  }
+
+  /**
+   * 反向 DNS 查询
+   */
+  static async reverseDns(ip, server) {
+    if (!Scanner.isValidIPv4(ip)) return { success: false, error: '无效 IP' };
+    const resolver = server ? new dns.Resolver() : dns;
+    if (server) {
+      try { resolver.setServers([server]); } catch (e) { return { success: false, error: e.message }; }
+    }
+    try {
+      const names = await promisify(resolver.reverse || dns.reverse)(ip);
+      return { success: true, ip, server: server || 'system', hostnames: names };
+    } catch (e) {
+      return { success: true, ip, server: server || 'system', hostnames: [] };
+    }
+  }
+
+  /**
+   * 网速测试 / 链路质量评估
+   * 不需要服务端配合，基于 ping + TCP 连接 + Mathis 公式估算
+   * @returns {Promise<{success, rtt, jitter, loss, tcpConnectTime, bandwidthEstimate, quality, samples}>}
+   */
+  static async speedTest(host, options = {}) {
+    if (!Scanner.isValidIPv4(host)) return { success: false, error: '无效 IP' };
+    const samples = options.samples || 10;
+    const pingTimeout = options.pingTimeout || 1000;
+
+    const scanner = new Scanner();
+    // 1. 多次 ping 测 RTT、抖动、丢包
+    const results = [];
+    for (let i = 0; i < samples; i++) {
+      const r = await scanner.pingOnce(host, pingTimeout);
+      results.push(r);
+    }
+
+    const alive = results.filter(r => r.alive);
+    const loss = results.length ? ((results.length - alive.length) / results.length * 100) : 100;
+    const latencies = alive.map(r => r.latency || 0);
+    const rtt = latencies.length ? latencies.reduce((a, b) => a + b, 0) / latencies.length : null;
+
+    let jitter = 0;
+    if (latencies.length >= 2) {
+      let sum = 0;
+      for (let i = 1; i < latencies.length; i++) sum += Math.abs(latencies[i] - latencies[i - 1]);
+      jitter = sum / (latencies.length - 1);
+    }
+
+    // 2. TCP 连接时间测量（依次尝试常见端口，取第一个开放的）
+    let tcpConnectTime = null;
+    let tcpPortUsed = null;
+    const tcpPorts = options.port ? [options.port] : [80, 445, 443, 22, 8080];
+    for (const p of tcpPorts) {
+      const t0 = Date.now();
+      const open = await scanner.checkPort(host, p, 800);
+      if (open) {
+        tcpConnectTime = Date.now() - t0;
+        tcpPortUsed = p;
+        break;
+      }
+    }
+
+    // 3. 用 Mathis 公式估算理论吞吐量上限（基于 RTT 和丢包率）
+    // 吞吐量 ≈ MSS * 8 / (RTT * sqrt(p))
+    // MSS 典型 1460 字节，p 为丢包率
+    let bandwidthEstimate = null;
+    if (rtt != null && loss < 100) {
+      const MSS = 1460;
+      const p = Math.max(loss / 100, 0.000001); // 避免除零
+      bandwidthEstimate = (MSS * 8) / ((rtt / 1000) * Math.sqrt(p)) / 1000; // kbps
+    }
+
+    // 4. 质量评级
+    let quality;
+    if (rtt == null) quality = '不可达';
+    else if (rtt < 10 && loss === 0) quality = '极速';
+    else if (rtt < 50 && loss < 5) quality = '良好';
+    else if (rtt < 150 && loss < 15) quality = '一般';
+    else if (rtt < 300 && loss < 30) quality = '较差';
+    else quality = '极差';
+
+    return {
+      success: true,
+      host,
+      rtt: rtt != null ? Number(rtt.toFixed(2)) : null,
+      jitter: Number(jitter.toFixed(2)),
+      loss: Number(loss.toFixed(1)),
+      tcpConnectTime: tcpConnectTime != null ? Number(tcpConnectTime.toFixed(2)) : null,
+      tcpPort: tcpPortUsed,
+      bandwidthEstimate: bandwidthEstimate != null ? Number(bandwidthEstimate.toFixed(1)) : null,
+      quality,
+      samples: results.length,
+      aliveCount: alive.length
+    };
+  }
+
+  /**
+   * 远程关机/重启（Windows：调用 shutdown 命令）
+   * 需要管理员权限 + 目标开启 RemoteRegistry / WMI
+   * @param {string} host 目标 IP
+   * @param {Object} options { action: 'shutdown'|'restart', timeout: 30, force: true, message: '' }
+   */
+  static async remoteShutdown(host, options = {}) {
+    if (!Scanner.isValidIPv4(host)) return { success: false, error: '无效 IP' };
+    const action = options.action === 'restart' ? '/r' : '/s';
+    const timeout = options.timeout != null ? options.timeout : 30;
+    const force = options.force !== false ? '/f' : '';
+    const msg = options.message ? `/c "${String(options.message).replace(/"/g, '')}"` : '';
+
+    return new Promise((resolve) => {
+      const args = [action, '/m', `\\\\${host}`, '/t', String(timeout), force];
+      if (msg) args.push(msg);
+      const filtered = args.filter(Boolean);
+      const proc = spawn('shutdown', filtered, { shell: false });
+
+      let stderr = '';
+      let stdout = '';
+      const timer = setTimeout(() => { proc.kill(); resolve({ success: false, error: '命令超时' }); }, 10000);
+
+      proc.stdout.on('data', (d) => { stdout += d.toString(); });
+      proc.stderr.on('data', (d) => { stderr += d.toString(); });
+      proc.on('error', (err) => {
+        clearTimeout(timer);
+        resolve({ success: false, error: '无法执行 shutdown 命令（需 Windows 且有权限）: ' + err.message });
+      });
+      proc.on('close', (code) => {
+        clearTimeout(timer);
+        if (code === 0) {
+          resolve({ success: true, host, action: options.action || 'shutdown', timeout, message: options.message || '' });
+        } else {
+          // 常见错误：网络路径未找到(53)、拒绝访问(5)
+          let hint = '';
+          if (/拒绝访问|access denied/i.test(stderr)) hint = '（目标拒绝访问，需开启远程关机服务且有管理员权限）';
+          else if (/网络路径|network path/i.test(stderr)) hint = '（找不到目标主机，检查 IP 或目标是否开启相关服务）';
+          resolve({ success: false, error: (stderr || stdout || '执行失败').trim() + hint });
+        }
+      });
+    });
   }
 }
 

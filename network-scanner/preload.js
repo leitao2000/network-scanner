@@ -60,5 +60,30 @@ contextBridge.exposeInMainWorld('electronAPI', {
     const wrapped = (event, device) => callback(device);
     ipcRenderer.on('network:scanDeviceUpdate', wrapped);
     return () => ipcRenderer.removeListener('network:scanDeviceUpdate', wrapped);
-  }
+  },
+
+  // ── 网络诊断工具扩展 ──
+  traceroute: (host, maxHops, timeout) => ipcRenderer.invoke('network:traceroute', { host, maxHops, timeout }),
+  wakeOnLan: (mac, broadcast) => ipcRenderer.invoke('network:wakeOnLan', { mac, broadcast }),
+  scanUdpPorts: (host, ports, timeout) => ipcRenderer.invoke('network:scanUdpPorts', { host, ports, timeout }),
+  scanPortsAdvanced: (host, ports, options) => ipcRenderer.invoke('network:scanPortsAdvanced', { host, ports, options }),
+  detectOs: (device) => ipcRenderer.invoke('network:detectOs', { device }),
+  resolveDns: (hostname, server) => ipcRenderer.invoke('network:resolveDns', { hostname, server }),
+  reverseDns: (ip, server) => ipcRenderer.invoke('network:reverseDns', { ip, server }),
+  speedTest: (host, options) => ipcRenderer.invoke('network:speedTest', { host, options }),
+  remoteShutdown: (host, options) => ipcRenderer.invoke('network:remoteShutdown', { host, options }),
+
+  // ── 设备元数据持久化（备注/标签/收藏/分组） ──
+  deviceMetaGetAll: () => ipcRenderer.invoke('devicemeta:getAll'),
+  deviceMetaSave: (device, meta) => ipcRenderer.invoke('devicemeta:save', { device, meta }),
+  deviceMetaDelete: (device) => ipcRenderer.invoke('devicemeta:delete', { device }),
+  deviceMetaAddGroup: (name) => ipcRenderer.invoke('devicemeta:addGroup', { name }),
+  deviceMetaRemoveGroup: (name) => ipcRenderer.invoke('devicemeta:removeGroup', { name }),
+  deviceMetaGetGroups: () => ipcRenderer.invoke('devicemeta:getGroups'),
+
+  // ── 扫描历史数据库持久化（JSON 文件） ──
+  historyDbGet: (limit) => ipcRenderer.invoke('historydb:get', { limit }),
+  historyDbSave: (record) => ipcRenderer.invoke('historydb:save', { record }),
+  historyDbClear: () => ipcRenderer.invoke('historydb:clear'),
+  historyDbDelete: (id) => ipcRenderer.invoke('historydb:delete', { id })
 });

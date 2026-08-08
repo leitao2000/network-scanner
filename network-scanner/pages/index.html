@@ -59,12 +59,22 @@
   /* Semantic state colors */
   --scanner-state-success: #16a34a;
   --scanner-state-success-bg: #dcfce7;
+  --scanner-state-success-50: #f0fdf4;
+  --scanner-state-success-100: #dcfce7;
   --scanner-state-warning: #f59e0b;
   --scanner-state-warning-bg: #fef3c7;
+  --scanner-state-warning-50: #fffbeb;
+  --scanner-state-warning-100: #fef3c7;
   --scanner-state-error: #ef4444;
   --scanner-state-error-bg: #fee2e2;
+  --scanner-state-error-100: #fee2e2;
   --scanner-state-info: #3b82f6;
   --scanner-state-info-bg: #dbeafe;
+  --scanner-state-info-50: #eff6ff;
+  --scanner-state-info-100: #dbeafe;
+
+  /* Primary surface aliases */
+  --scanner-primary-bg: var(--scanner-primary-50);
 
   /* Typography */
   --scanner-font-sans: Inter, "PingFang SC", "Microsoft YaHei", "Noto Sans SC", system-ui, sans-serif;
@@ -102,6 +112,16 @@ html.dark {
   --scanner-shadow-1: 0 1px 2px rgba(0, 0, 0, 0.25), 0 1px 1px rgba(0, 0, 0, 0.15);
   --scanner-shadow-2: 0 4px 12px rgba(0, 0, 0, 0.35);
   --scanner-shadow-3: 0 16px 40px rgba(0, 0, 0, 0.45);
+
+  /* Dark mode state surfaces */
+  --scanner-state-success-50: rgba(22, 163, 74, 0.1);
+  --scanner-state-success-100: rgba(22, 163, 74, 0.15);
+  --scanner-state-warning-50: rgba(245, 158, 11, 0.1);
+  --scanner-state-warning-100: rgba(245, 158, 11, 0.15);
+  --scanner-state-error-100: rgba(239, 68, 68, 0.15);
+  --scanner-state-info-50: rgba(59, 130, 246, 0.1);
+  --scanner-state-info-100: rgba(59, 130, 246, 0.15);
+  --scanner-primary-bg: rgba(59, 130, 246, 0.1);
 }
 
 body {
@@ -2345,6 +2365,10 @@ body {
                   <i data-lucide="history" class="w-3.5 h-3.5"></i>
                   <span class="hidden sm:inline">历史</span>
                 </button>
+                <button id="btn-viz" class="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium rounded-md border border-border bg-card text-foreground hover:bg-muted transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" title="可视化统计">
+                  <i data-lucide="bar-chart-3" class="w-3.5 h-3.5"></i>
+                  <span class="hidden sm:inline">统计</span>
+                </button>
                 <button id="btn-ai-config" class="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium rounded-md border border-border bg-card text-foreground hover:bg-muted transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" title="AI 模型配置">
                   <i data-lucide="bot" class="w-3.5 h-3.5"></i>
                   <span class="hidden sm:inline">AI</span>
@@ -2780,12 +2804,21 @@ body {
             <div id="detail-icon-wrap" style="width:40px; height:40px; border-radius:10px; display:flex; align-items:center; justify-content:center; background:var(--scanner-state-info-bg); color:var(--scanner-state-info);">
               <i data-lucide="monitor" style="width:20px; height:20px;"></i>
             </div>
+            <div class="drawer-meta-actions" style="display:flex; gap:4px; margin-left:auto; margin-right:6px;">
+              <button id="detail-fav-btn" class="drawer-icon-btn" title="收藏 / 取消收藏" style="width:30px; height:30px; border-radius:8px; border:1px solid var(--scanner-border); background:var(--scanner-card); color:var(--scanner-ink-2); cursor:pointer; display:flex; align-items:center; justify-content:center; transition:all .15s;">
+                <i data-lucide="star" style="width:15px; height:15px;"></i>
+              </button>
+              <button id="detail-meta-btn" class="drawer-icon-btn" title="编辑备注 / 标签 / 分组" style="width:30px; height:30px; border-radius:8px; border:1px solid var(--scanner-border); background:var(--scanner-card); color:var(--scanner-ink-2); cursor:pointer; display:flex; align-items:center; justify-content:center; transition:all .15s;">
+                <i data-lucide="tag" style="width:15px; height:15px;"></i>
+              </button>
+            </div>
             <button id="detail-close" class="drawer-close">
               <i data-lucide="x" style="width:16px; height:16px;"></i>
             </button>
           </div>
           <h3 id="detail-title">设备详情</h3>
           <p id="detail-subtitle">-</p>
+          <div id="detail-meta-badges" style="display:flex; flex-wrap:wrap; gap:6px; margin-top:8px;"></div>
         </div>
         <div class="drawer-scroll">
           <div id="detail-ip-hero" class="drawer-ip-hero">
@@ -2821,7 +2854,7 @@ body {
             </div>
           </div>
 
-          <!-- 端口扫描面板 -->
+          <!-- 端口扫描面板（增强版：自定义范围 + UDP + Banner + OS检测） -->
           <div class="action-panel" id="portscan-panel">
             <div class="action-panel-header" data-toggle="portscan-panel">
               <div class="action-panel-title">
@@ -2833,15 +2866,79 @@ body {
             <div class="action-panel-body">
               <div class="action-panel-actions">
                 <button class="action-btn primary" id="portscan-run-btn">
-                  <i data-lucide="play"></i> 扫描常用端口
+                  <i data-lucide="play"></i> 常用端口
                 </button>
                 <button class="action-btn" id="portscan-full-btn">
-                  <i data-lucide="layers"></i> 全端口（1-1024）
+                  <i data-lucide="layers"></i> 全端口
+                </button>
+                <button class="action-btn" id="portscan-custom-btn">
+                  <i data-lucide="settings-2"></i> 自定义
                 </button>
               </div>
-              <div class="action-panel-hint">检测目标设备开放的网络服务端口，识别高危端口（Telnet/RDP/SMB 等）。</div>
+              <!-- 自定义端口扫描选项 -->
+              <div id="portscan-custom-row" style="display:none; margin-top:8px; padding:8px 10px; border-radius:8px; background:var(--scanner-muted); border:1px solid var(--scanner-border);">
+                <input id="portscan-custom-range" type="text" placeholder="如 80,443,8080 或 1-1000" style="width:100%; padding:5px 8px; border-radius:6px; border:1px solid var(--scanner-border); background:var(--scanner-card); color:var(--scanner-ink); font-size:12px; font-family:var(--scanner-mono, monospace); outline:none;" />
+                <div style="display:flex; gap:10px; margin-top:6px; flex-wrap:wrap;">
+                  <label style="display:flex; align-items:center; gap:3px; font-size:11px; color:var(--scanner-ink-2); cursor:pointer;">
+                    <input type="checkbox" id="portscan-udp-check" style="cursor:pointer;" /> UDP 扫描
+                  </label>
+                  <label style="display:flex; align-items:center; gap:3px; font-size:11px; color:var(--scanner-ink-2); cursor:pointer;">
+                    <input type="checkbox" id="portscan-banner-check" style="cursor:pointer;" /> Banner Grabbing
+                  </label>
+                </div>
+              </div>
+              <div class="action-panel-actions" style="margin-top:6px;">
+                <button class="action-btn" id="portscan-os-btn">
+                  <i data-lucide="cpu"></i> OS 指纹检测
+                </button>
+              </div>
+              <div class="action-panel-hint">检测开放端口与高危服务，支持自定义端口范围、UDP 扫描、Banner Grabbing 和 OS 指纹检测。</div>
               <div id="portscan-result">
-                <div class="port-empty">点击"扫描常用端口"开始检测</div>
+                <div class="port-empty">点击"常用端口"开始检测</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 网络诊断面板（Traceroute / DNS / 网速测试 / WoL / 远程关机） -->
+          <div class="action-panel" id="diag-panel">
+            <div class="action-panel-header" data-toggle="diag-panel">
+              <div class="action-panel-title">
+                <i data-lucide="stethoscope"></i>
+                网络诊断工具
+              </div>
+              <i data-lucide="chevron-down" class="action-panel-toggle"></i>
+            </div>
+            <div class="action-panel-body">
+              <div class="action-panel-actions">
+                <button class="action-btn" id="diag-trace-btn">
+                  <i data-lucide="route"></i> 路由追踪
+                </button>
+                <button class="action-btn" id="diag-dns-btn">
+                  <i data-lucide="globe"></i> DNS 查询
+                </button>
+                <button class="action-btn" id="diag-speed-btn">
+                  <i data-lucide="gauge"></i> 网速测试
+                </button>
+              </div>
+              <div class="action-panel-actions" style="margin-top:4px;">
+                <button class="action-btn" id="diag-wol-btn">
+                  <i data-lucide="power"></i> Wake-on-LAN
+                </button>
+                <button class="action-btn" id="diag-shutdown-btn">
+                  <i data-lucide="power-off"></i> 远程关机
+                </button>
+              </div>
+              <!-- DNS 查询输入区 -->
+              <div id="diag-dns-row" style="display:none; margin-top:8px; padding:8px 10px; border-radius:8px; background:var(--scanner-muted); border:1px solid var(--scanner-border);">
+                <input id="diag-dns-name" type="text" placeholder="域名如 baidu.com 或 IP 地址" style="width:100%; padding:5px 8px; border-radius:6px; border:1px solid var(--scanner-border); background:var(--scanner-card); color:var(--scanner-ink); font-size:12px; outline:none;" />
+                <div style="display:flex; gap:6px; margin-top:6px; align-items:center;">
+                  <input id="diag-dns-server" type="text" placeholder="DNS 服务器（可选，如 8.8.8.8）" style="flex:1; padding:5px 8px; border-radius:6px; border:1px solid var(--scanner-border); background:var(--scanner-card); color:var(--scanner-ink); font-size:11px; outline:none;" />
+                  <button class="action-btn primary" id="diag-dns-run-btn" style="padding:5px 12px; font-size:11px; white-space:nowrap;">查询</button>
+                </div>
+              </div>
+              <div class="action-panel-hint">路由追踪、DNS 解析、链路网速评估、Wake-on-LAN 远程唤醒、远程关机/重启。</div>
+              <div id="diag-result">
+                <div class="port-empty">选择上方工具进行网络诊断</div>
               </div>
             </div>
           </div>
@@ -3217,6 +3314,82 @@ body {
           <button id="ai-save-btn" class="action-btn primary">
             <i data-lucide="check" style="width:13px;height:13px;"></i> 保存
           </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 设备元数据编辑弹窗（备注 / 标签 / 收藏 / 分组） -->
+    <div id="meta-overlay" class="ai-config-overlay" style="display:none;">
+      <div class="ai-config-dialog" style="max-width:440px;">
+        <div class="ai-config-header">
+          <h3>编辑设备信息</h3>
+          <button id="meta-close" class="drawer-close" style="width:28px;height:28px;">
+            <i data-lucide="x" style="width:16px;height:16px;"></i>
+          </button>
+        </div>
+        <div class="ai-config-body" style="padding:16px 20px;">
+          <div class="ai-config-field">
+            <label>设备备注</label>
+            <textarea id="meta-note" rows="2" placeholder="如：办公室打印机、研发部服务器..." style="width:100%; padding:8px 10px; border-radius:8px; border:1px solid var(--scanner-border); background:var(--scanner-card); color:var(--scanner-ink); font-size:13px; outline:none; resize:vertical; font-family:inherit;"></textarea>
+          </div>
+          <div class="ai-config-field">
+            <label>标签（逗号分隔）</label>
+            <input id="meta-tags" type="text" placeholder="如：重要, 服务器, 需关注" style="width:100%; padding:8px 10px; border-radius:8px; border:1px solid var(--scanner-border); background:var(--scanner-card); color:var(--scanner-ink); font-size:13px; outline:none;" />
+          </div>
+          <div class="ai-config-field">
+            <label>分组</label>
+            <input id="meta-group" type="text" list="meta-group-list" placeholder="选择或输入分组名" style="width:100%; padding:8px 10px; border-radius:8px; border:1px solid var(--scanner-border); background:var(--scanner-card); color:var(--scanner-ink); font-size:13px; outline:none;" />
+            <datalist id="meta-group-list"></datalist>
+          </div>
+        </div>
+        <div class="ai-config-footer" style="padding:12px 20px;">
+          <button id="meta-delete-btn" class="action-btn" style="color:var(--scanner-state-error);">
+            <i data-lucide="trash-2" style="width:13px;height:13px;"></i> 清除元数据
+          </button>
+          <button id="meta-save-btn" class="action-btn primary" style="margin-left:auto;">
+            <i data-lucide="check" style="width:13px;height:13px;"></i> 保存
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 可视化统计面板 -->
+    <div id="viz-panel" class="history-panel" style="display:none; max-width:680px;">
+      <div class="history-panel-header">
+        <h3>可视化统计</h3>
+        <div class="flex items-center gap-2">
+          <button id="viz-refresh-btn" class="action-btn" style="padding:4px 8px; font-size:11px;">
+            <i data-lucide="refresh-cw"></i> 刷新
+          </button>
+          <button id="viz-close-btn" class="drawer-close" style="width:24px; height:24px;">
+            <i data-lucide="x" style="width:14px; height:14px;"></i>
+          </button>
+        </div>
+      </div>
+      <div style="padding:12px 16px; overflow-y:auto; max-height:calc(80vh - 50px);">
+        <!-- 厂商分布饼图 -->
+        <div style="margin-bottom:16px;">
+          <div style="font-size:13px; font-weight:600; color:var(--scanner-ink); margin-bottom:8px; display:flex; align-items:center; gap:6px;">
+            <i data-lucide="pie-chart" style="width:14px; height:14px; color:var(--scanner-primary);"></i>
+            设备厂商分布
+          </div>
+          <div id="viz-vendor-chart"></div>
+        </div>
+        <!-- 端口统计图 -->
+        <div style="margin-bottom:16px;">
+          <div style="font-size:13px; font-weight:600; color:var(--scanner-ink); margin-bottom:8px; display:flex; align-items:center; gap:6px;">
+            <i data-lucide="bar-chart-3" style="width:14px; height:14px; color:var(--scanner-primary);"></i>
+            开放端口 Top 10
+          </div>
+          <div id="viz-port-chart"></div>
+        </div>
+        <!-- 延迟趋势图 -->
+        <div>
+          <div style="font-size:13px; font-weight:600; color:var(--scanner-ink); margin-bottom:8px; display:flex; align-items:center; gap:6px;">
+            <i data-lucide="trending-up" style="width:14px; height:14px; color:var(--scanner-primary);"></i>
+            扫描历史趋势
+          </div>
+          <div id="viz-trend-chart"></div>
         </div>
       </div>
     </div>

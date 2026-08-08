@@ -12,12 +12,16 @@
   let scanTimer = null;
   let searchQuery = '';
   let scanPromise = null;
+  let scanAborted = false;
 
   // 新增状态
   let currentDetailDevice = null;
   let monitorTimer = null;
   let monitorStats = { success: 0, total: 0, latencies: [], history: [] };
   let activeAlerts = [];
+
+  // 设备元数据缓存（备注 / 标签 / 收藏 / 分组）
+  let deviceMeta = { devices: {}, groups: [] };
 
   const modeConfig = {
     quick: { label: '快速', concurrency: 80, timeout: 800 },
@@ -1100,6 +1104,7 @@
     clearDevices();
     setScanning(true);
     scanStartTime = Date.now();
+    scanAborted = false;
 
     scanTimer = setInterval(() => {
       setText(els.scanElapsed, ((Date.now() - scanStartTime) / 1000).toFixed(1));
@@ -1111,6 +1116,7 @@
     try {
       scanPromise = api.scanNetwork({ cidr, concurrency: config.concurrency, timeout: config.timeout });
       const result = await scanPromise;
+      if (scanAborted) return; // 用户已停止扫描，忽略结果
       if (result.success) {
         // 扫描完成后一次性显示所有在线设备
         devices = result.devices;
@@ -1137,6 +1143,7 @@
 
   async function stopScan() {
     if (!isScanning) return;
+    scanAborted = true;
     await api.stopScan();
   }
 
@@ -1308,6 +1315,9 @@
     // 重置操作面板
     resetActionPanels();
 
+    // 渲染设备元数据（收藏 / 标签 / 分组 / 备注）
+    renderDeviceMeta(device);
+
     // 显示 overlay 并触发动画
     overlay.style.display = 'flex';
     // 短暂延迟让 CSS transition 生效
@@ -1323,9 +1333,15 @@
     const pingResult = document.getElementById('ping-result');
     const portscanResult = document.getElementById('portscan-result');
     const aiResult = document.getElementById('ai-result');
+    const diagResult = document.getElementById('diag-result');
+    const customRow = document.getElementById('portscan-custom-row');
+    const dnsRow = document.getElementById('diag-dns-row');
     if (pingResult) pingResult.innerHTML = '<div class="port-empty">点击"开始 Ping"进行连通性测试</div>';
-    if (portscanResult) portscanResult.innerHTML = '<div class="port-empty">点击"扫描常用端口"开始检测</div>';
+    if (portscanResult) portscanResult.innerHTML = '<div class="port-empty">点击"常用端口"开始检测</div>';
     if (aiResult) aiResult.innerHTML = '<div class="port-empty">点击"分析"按钮，AI 将生成该设备的安全分析报告</div>';
+    if (diagResult) diagResult.innerHTML = '<div class="port-empty">选择上方工具进行网络诊断</div>';
+    if (customRow) customRow.style.display = 'none';
+    if (dnsRow) dnsRow.style.display = 'none';
   }
 
   function hideDeviceDetail() {
@@ -1346,6 +1362,10 @@
       { icon: 'git-branch', label: '端口扫描', action: () => { showDeviceDetail(device); runPortScan(device, 'common'); } },
       { icon: 'radio', label: '连续监控', action: () => startMonitor(device) },
       { icon: 'sparkles', label: 'AI 智能分析', action: () => { showDeviceDetail(device); setTimeout(() => openAiAnalysis('full'), 300); } },
+      { divider: true },
+      { icon: 'route', label: '路由追踪', action: () => { showDeviceDetail(device); runTraceroute(device); } },
+      { icon: 'gauge', label: '网速测试', action: () => { showDeviceDetail(device); runSpeedTest(device); } },
+      { icon: 'power', label: 'Wake-on-LAN', action: () => { showDeviceDetail(device); runWakeOnLan(device); } },
       { divider: true },
       { icon: 'copy', label: '复制 IP 地址', action: () => copyToClipboard(device.ip) },
       { icon: 'copy', label: '复制 MAC 地址', action: () => copyToClipboard(device.mac || '') },
@@ -1479,27 +1499,74 @@
   }
 
   // ── 端口扫描 ──────────────────────────────────
+  // 解析自定义端口范围字符串，如 "80,443,8080" 或 "1-1000" 或 "80,443,1000-2000"
+  function parsePortRange(str) {
+    const ports = [];
+    const parts = str.split(',').map(s => s.trim()).filter(Boolean);
+    for (const part of parts) {
+      const rangeMatch = part.match(/^(\d+)-(\d+)$/);
+      if (rangeMatch) {
+        const start = parseInt(rangeMatch[1], 10);
+        const end = parseInt(rangeMatch[2], 10);
+        if (start >= 1 && end <= 65535 && start <= end) {
+          for (let p = start; p <= end; p++) ports.push(p);
+        }
+      } else if (/^\d+$/.test(part)) {
+        const p = parseInt(part, 10);
+        if (p >= 1 && p <= 65535) ports.push(p);
+      }
+    }
+    return [...new Set(ports)].sort((a, b) => a - b);
+  }
+
   async function runPortScan(device, mode) {
     const resultEl = document.getElementById('portscan-result');
     const runBtn = document.getElementById('portscan-run-btn');
     const fullBtn = document.getElementById('portscan-full-btn');
+    const customBtn = document.getElementById('portscan-custom-btn');
     if (!resultEl || !device) return;
-    runBtn.disabled = true;
-    fullBtn.disabled = true;
-    resultEl.innerHTML = '<div class="port-empty"><div class="action-panel-hint" style="margin-bottom:6px;">正在扫描端口，请稍候...</div></div>';
 
     let ports;
-    if (mode === 'full') {
+    let useUdp = false;
+    let useBanner = false;
+
+    if (mode === 'custom') {
+      const rangeStr = document.getElementById('portscan-custom-range')?.value || '';
+      useUdp = document.getElementById('portscan-udp-check')?.checked || false;
+      useBanner = document.getElementById('portscan-banner-check')?.checked || false;
+      ports = parsePortRange(rangeStr);
+      if (!ports.length) {
+        resultEl.innerHTML = '<div class="port-empty" style="color:var(--scanner-state-warning);">请输入有效的端口范围，如 80,443 或 1-1000</div>';
+        return;
+      }
+      if (ports.length > 2048) {
+        resultEl.innerHTML = '<div class="port-empty" style="color:var(--scanner-state-warning);">端口数量过多（>2048），请缩小范围</div>';
+        return;
+      }
+    } else if (mode === 'full') {
       ports = [];
       for (let p = 1; p <= 1024; p++) ports.push(p);
     } else {
       ports = Object.keys(PORT_SERVICES).map(Number);
     }
 
+    runBtn.disabled = true;
+    fullBtn.disabled = true;
+    if (customBtn) customBtn.disabled = true;
+    const modeLabel = useUdp ? 'UDP' : 'TCP';
+    resultEl.innerHTML = `<div class="port-empty"><div class="action-panel-hint" style="margin-bottom:6px;">正在${modeLabel}扫描 ${ports.length} 个端口${useBanner ? '（含 Banner Grabbing）' : ''}，请稍候...</div></div>`;
+
     try {
-      const r = await api.scanPorts(device.ip, ports);
+      let r;
+      if (useUdp) {
+        r = await api.scanUdpPorts(device.ip, ports, 1500);
+      } else if (useBanner || mode === 'custom') {
+        r = await api.scanPortsAdvanced(device.ip, ports, { banner: useBanner, timeout: 1500 });
+      } else {
+        r = await api.scanPorts(device.ip, ports);
+      }
       if (r.success) {
-        renderPortScanResult(resultEl, r.openPorts || []);
+        renderPortScanResult(resultEl, r.openPorts || [], useUdp);
       } else {
         resultEl.innerHTML = `<div class="port-empty" style="color:var(--scanner-state-error);">扫描失败: ${r.error || '未知错误'}</div>`;
       }
@@ -1508,30 +1575,35 @@
     } finally {
       runBtn.disabled = false;
       fullBtn.disabled = false;
+      if (customBtn) customBtn.disabled = false;
     }
   }
 
-  function renderPortScanResult(el, openPorts) {
+  function renderPortScanResult(el, openPorts, isUdp) {
     if (!openPorts.length) {
       el.innerHTML = '<div class="port-empty">未发现开放端口</div>';
       return;
     }
     const items = openPorts.map(item => {
       const port = typeof item === 'object' ? item.port : item;
-      const svcName = typeof item === 'object' ? item.name : (PORT_SERVICES[port] || '未知');
+      const svcName = typeof item === 'object' ? (item.name || PORT_SERVICES[port] || '未知') : (PORT_SERVICES[port] || '未知');
       const svcDesc = typeof item === 'object' ? (item.desc || '') : (PORT_DESCRIPTIONS[port] || '');
+      const banner = typeof item === 'object' ? (item.banner || '') : '';
       const riskLevel = typeof item === 'object' ? item.risk : (HIGH_RISK_PORTS.includes(port) ? 'high' : MED_RISK_PORTS.includes(port) ? 'medium' : '');
       const riskLabel = riskLevel === 'high' ? '高危' : riskLevel === 'medium' ? '中危' : '低危';
       const riskCls = riskLevel === 'high' ? 'high' : riskLevel === 'medium' ? 'med' : '';
       let risk = riskCls ? `<span class="port-risk ${riskCls}">${riskLabel}</span>` : '';
+      const protoTag = isUdp ? '<span style="font-size:9px; padding:1px 4px; border-radius:3px; background:var(--scanner-state-info-bg); color:var(--scanner-state-info); font-weight:600;">UDP</span>' : '';
       return `
         <div class="port-item" style="flex-direction:column; align-items:flex-start; gap:4px; padding:10px 8px;">
           <div style="display:flex; align-items:center; gap:8px; width:100%;">
             <span class="port-num">${port}</span>
+            ${protoTag}
             <span class="port-svc">${svcName}</span>
             ${risk}
           </div>
           ${svcDesc ? `<div style="font-size:11px; color:var(--scanner-ink-3); padding-left:2px;">${svcDesc}</div>` : ''}
+          ${banner ? `<div style="font-size:10px; color:var(--scanner-ink-3); padding:2px 6px; border-radius:4px; background:var(--scanner-muted); font-family:monospace; word-break:break-all; width:100%;">${banner}</div>` : ''}
         </div>
       `;
     }).join('');
@@ -1700,6 +1772,16 @@
       });
       if (history.length > HISTORY_MAX) history.length = HISTORY_MAX;
       localStorage.setItem(HISTORY_KEY, JSON.stringify(history));
+      // 同步保存到持久化数据库（JSON 文件）
+      saveHistoryToDb({
+        id: history[0].id,
+        timestamp: history[0].time,
+        cidr: cidr || '',
+        elapsed: elapsed || 0,
+        deviceCount: devs.length,
+        onlineCount: devs.filter(d => d.status === '在线').length,
+        devices: deviceSummary
+      });
       // 首次扫描建立基线
       const baseline = loadBaseline();
       if (baseline.length === 0 && devs.length > 0) {
@@ -1821,6 +1903,8 @@
       // 清除历史记录
       if (!confirm('确定清空所有扫描历史记录吗？此操作不可撤销。')) return;
       localStorage.removeItem(HISTORY_KEY);
+      // 同步清除持久化数据库
+      api.historyDbClear().catch(() => {});
       showToast('历史记录已清空');
       showHistoryPanel();
     }
@@ -2019,6 +2103,61 @@
     });
     document.getElementById('portscan-full-btn')?.addEventListener('click', () => {
       if (currentDetailDevice) runPortScan(currentDetailDevice, 'full');
+    });
+    document.getElementById('portscan-custom-btn')?.addEventListener('click', () => {
+      const row = document.getElementById('portscan-custom-row');
+      if (row) row.style.display = row.style.display === 'none' ? 'block' : 'none';
+    });
+    document.getElementById('portscan-os-btn')?.addEventListener('click', () => {
+      if (currentDetailDevice) runOsDetect(currentDetailDevice);
+    });
+
+    // 网络诊断工具按钮
+    document.getElementById('diag-trace-btn')?.addEventListener('click', () => {
+      if (currentDetailDevice) runTraceroute(currentDetailDevice);
+    });
+    document.getElementById('diag-dns-btn')?.addEventListener('click', () => {
+      const row = document.getElementById('diag-dns-row');
+      if (row) row.style.display = row.style.display === 'none' ? 'block' : 'none';
+    });
+    document.getElementById('diag-dns-run-btn')?.addEventListener('click', runDnsQuery);
+    document.getElementById('diag-speed-btn')?.addEventListener('click', () => {
+      if (currentDetailDevice) runSpeedTest(currentDetailDevice);
+    });
+    document.getElementById('diag-wol-btn')?.addEventListener('click', () => {
+      if (currentDetailDevice) runWakeOnLan(currentDetailDevice);
+    });
+    document.getElementById('diag-shutdown-btn')?.addEventListener('click', () => {
+      if (currentDetailDevice) runRemoteShutdown(currentDetailDevice);
+    });
+
+    // 设备元数据按钮（收藏 + 编辑）
+    document.getElementById('detail-fav-btn')?.addEventListener('click', () => {
+      if (currentDetailDevice) toggleFavorite(currentDetailDevice);
+    });
+    document.getElementById('detail-meta-btn')?.addEventListener('click', openMetaEditor);
+    document.getElementById('meta-close')?.addEventListener('click', closeMetaEditor);
+    document.getElementById('meta-overlay')?.addEventListener('click', (e) => {
+      if (e.target.id === 'meta-overlay') closeMetaEditor();
+    });
+    document.getElementById('meta-save-btn')?.addEventListener('click', saveMetaFromEditor);
+    document.getElementById('meta-delete-btn')?.addEventListener('click', deleteDeviceMetaFromEditor);
+
+    // 可视化统计面板
+    document.getElementById('btn-viz')?.addEventListener('click', () => {
+      const panel = document.getElementById('viz-panel');
+      if (panel.style.display === 'flex') {
+        hideVizPanel();
+      } else {
+        showVizPanel();
+      }
+    });
+    document.getElementById('viz-close-btn')?.addEventListener('click', hideVizPanel);
+    document.getElementById('viz-refresh-btn')?.addEventListener('click', () => {
+      renderVendorChart();
+      renderPortChart();
+      renderTrendChart();
+      showToast('统计图表已刷新');
     });
 
     // 历史记录按钮
@@ -3605,6 +3744,574 @@ ${deviceInfo}
     return { success: true, content: fullText };
   }
 
+  // ════════════════════════════════════════════════════════
+  // 设备元数据管理（备注 / 标签 / 收藏 / 分组）
+  // ════════════════════════════════════════════════════════
+
+  function getDeviceMetaKey(device) {
+    return device.mac && device.mac !== '00:00:00:00:00:00'
+      ? device.mac.toUpperCase()
+      : device.ip;
+  }
+
+  function getDeviceMeta(device) {
+    const key = getDeviceMetaKey(device);
+    return deviceMeta.devices[key] || null;
+  }
+
+  async function loadDeviceMeta() {
+    try {
+      const r = await api.deviceMetaGetAll();
+      if (r && r.devices) {
+        deviceMeta = r;
+      }
+    } catch (err) {
+      console.error('加载设备元数据失败:', err);
+    }
+  }
+
+  function renderDeviceMeta(device) {
+    const favBtn = document.getElementById('detail-fav-btn');
+    const badgesEl = document.getElementById('detail-meta-badges');
+    if (!favBtn || !badgesEl) return;
+
+    const meta = getDeviceMeta(device);
+    const isFav = meta && meta.favorite;
+
+    // 更新收藏按钮样式
+    if (isFav) {
+      favBtn.style.background = 'var(--scanner-state-warning-bg)';
+      favBtn.style.color = 'var(--scanner-state-warning)';
+      favBtn.style.borderColor = 'var(--scanner-state-warning)';
+    } else {
+      favBtn.style.background = 'var(--scanner-card)';
+      favBtn.style.color = 'var(--scanner-ink-2)';
+      favBtn.style.borderColor = 'var(--scanner-border)';
+    }
+
+    // 渲染标签徽章
+    const badges = [];
+    if (meta) {
+      if (meta.favorite) badges.push('<span style="font-size:10px; padding:2px 8px; border-radius:999px; background:var(--scanner-state-warning-bg); color:var(--scanner-state-warning); font-weight:600;">★ 收藏</span>');
+      if (meta.group) badges.push(`<span style="font-size:10px; padding:2px 8px; border-radius:999px; background:var(--scanner-state-info-bg); color:var(--scanner-state-info); font-weight:600;">📁 ${meta.group}</span>`);
+      if (meta.tags) {
+        meta.tags.split(',').map(t => t.trim()).filter(Boolean).forEach(tag => {
+          badges.push(`<span style="font-size:10px; padding:2px 8px; border-radius:999px; background:var(--scanner-muted); color:var(--scanner-ink-2); font-weight:500;">#${tag}</span>`);
+        });
+      }
+      if (meta.note) badges.push(`<span style="font-size:10px; padding:2px 8px; border-radius:999px; background:var(--scanner-state-success-bg); color:var(--scanner-state-success); font-weight:500;">📝 ${meta.note}</span>`);
+    }
+    badgesEl.innerHTML = badges.join('');
+  }
+
+  async function toggleFavorite(device) {
+    const meta = getDeviceMeta(device) || {};
+    const newFav = !meta.favorite;
+    try {
+      const r = await api.deviceMetaSave(device, { favorite: newFav });
+      if (r.success) {
+        deviceMeta.devices[r.key] = r.meta;
+        renderDeviceMeta(device);
+        showToast(newFav ? '已收藏' : '已取消收藏');
+        renderDevices();
+      }
+    } catch (err) {
+      showToast('操作失败: ' + err.message);
+    }
+  }
+
+  function openMetaEditor() {
+    if (!currentDetailDevice) { showToast('请先选择设备'); return; }
+    const overlay = document.getElementById('meta-overlay');
+    const meta = getDeviceMeta(currentDetailDevice) || {};
+
+    document.getElementById('meta-note').value = meta.note || '';
+    document.getElementById('meta-tags').value = meta.tags || '';
+    document.getElementById('meta-group').value = meta.group || '';
+
+    // 填充分组 datalist
+    const groupList = document.getElementById('meta-group-list');
+    groupList.innerHTML = (deviceMeta.groups || []).map(g => `<option value="${g}">`).join('');
+
+    overlay.style.display = 'flex';
+  }
+
+  function closeMetaEditor() {
+    const overlay = document.getElementById('meta-overlay');
+    if (overlay) overlay.style.display = 'none';
+  }
+
+  async function saveMetaFromEditor() {
+    if (!currentDetailDevice) return;
+    const note = document.getElementById('meta-note').value.trim();
+    const tags = document.getElementById('meta-tags').value.trim();
+    const group = document.getElementById('meta-group').value.trim();
+
+    try {
+      const r = await api.deviceMetaSave(currentDetailDevice, { note, tags, group });
+      if (r.success) {
+        deviceMeta.devices[r.key] = r.meta;
+        // 如果有新分组，添加到分组列表
+        if (group && !(deviceMeta.groups || []).includes(group)) {
+          deviceMeta.groups = deviceMeta.groups || [];
+          deviceMeta.groups.push(group);
+        }
+        renderDeviceMeta(currentDetailDevice);
+        closeMetaEditor();
+        showToast('设备信息已保存');
+        renderDevices();
+      }
+    } catch (err) {
+      showToast('保存失败: ' + err.message);
+    }
+  }
+
+  async function deleteDeviceMetaFromEditor() {
+    if (!currentDetailDevice) return;
+    try {
+      const r = await api.deviceMetaDelete(currentDetailDevice);
+      if (r.success) {
+        const key = getDeviceMetaKey(currentDetailDevice);
+        delete deviceMeta.devices[key];
+        renderDeviceMeta(currentDetailDevice);
+        closeMetaEditor();
+        showToast('元数据已清除');
+        renderDevices();
+      }
+    } catch (err) {
+      showToast('清除失败: ' + err.message);
+    }
+  }
+
+  // ════════════════════════════════════════════════════════
+  // 网络诊断工具
+  // ════════════════════════════════════════════════════════
+
+  function setDiagResult(html) {
+    const el = document.getElementById('diag-result');
+    if (el) el.innerHTML = html;
+  }
+
+  function setDiagLoading(msg) {
+    setDiagResult(`<div class="port-empty"><div class="action-panel-hint" style="margin-bottom:6px;">${msg}</div></div>`);
+  }
+
+  // Traceroute 路由追踪
+  async function runTraceroute(device) {
+    if (!device) return;
+    // 展开诊断面板
+    const panelBody = document.querySelector('#diag-panel .action-panel-body');
+    if (panelBody && panelBody.style.display === 'none') {
+      document.querySelector('#diag-panel .action-panel-header')?.click();
+    }
+    setDiagLoading(`正在追踪到 ${device.ip} 的路由，请稍候（最多 15 跳）...`);
+    try {
+      const r = await api.traceroute(device.ip, 15, 1500);
+      if (r.success && r.hops && r.hops.length > 0) {
+        const hopsHtml = r.hops.map((h, i) => {
+          const status = h.timeout ? 'timeout' : 'ok';
+          const statusColor = h.timeout ? 'var(--scanner-ink-3)' : 'var(--scanner-state-success)';
+          const statusText = h.timeout ? '* * *' : `${h.ip || '？'}${h.latency != null ? ` (${h.latency}ms)` : ''}`;
+          return `
+            <div style="display:flex; align-items:center; gap:10px; padding:6px 8px; border-bottom:1px solid var(--scanner-border);">
+              <span style="font-size:11px; font-weight:700; color:var(--scanner-ink-2); min-width:24px;">${i + 1}</span>
+              <span style="font-size:12px; font-family:monospace; color:${statusColor}; flex:1;">${statusText}</span>
+              ${h.hostname ? `<span style="font-size:10px; color:var(--scanner-ink-3);">${h.hostname}</span>` : ''}
+            </div>
+          `;
+        }).join('');
+        setDiagResult(`
+          <div style="margin-bottom:6px; font-size:12px; font-weight:600; color:var(--scanner-ink);">路由追踪结果（${r.hops.length} 跳）</div>
+          <div class="port-list">${hopsHtml}</div>
+          <div class="action-panel-hint" style="margin-top:6px;">总耗时约 ${r.elapsed || '-'}ms</div>
+        `);
+      } else {
+        setDiagResult(`<div class="port-empty" style="color:var(--scanner-state-warning);">路由追踪未返回结果${r.error ? '：' + r.error : ''}</div>`);
+      }
+    } catch (err) {
+      setDiagResult(`<div class="port-empty" style="color:var(--scanner-state-error);">路由追踪异常: ${err.message}</div>`);
+    }
+  }
+
+  // DNS 查询
+  async function runDnsQuery() {
+    const name = document.getElementById('diag-dns-name')?.value.trim();
+    const server = document.getElementById('diag-dns-server')?.value.trim();
+    if (!name) { showToast('请输入域名或 IP'); return; }
+    if (!currentDetailDevice) return;
+
+    setDiagLoading(`正在查询 ${name} ...`);
+    try {
+      const isIp = /^\d+\.\d+\.\d+\.\d+$/.test(name);
+      const r = isIp
+        ? await api.reverseDns(name, server || null)
+        : await api.resolveDns(name, server || null);
+      if (r.success) {
+        const results = r.addresses || r.hostnames || [];
+        if (results.length > 0) {
+          const itemsHtml = results.map(addr => `
+            <div style="display:flex; align-items:center; gap:8px; padding:6px 8px; border-bottom:1px solid var(--scanner-border);">
+              <i data-lucide="${isIp ? 'arrow-right' : 'globe'}" style="width:12px; height:12px; color:var(--scanner-state-info);"></i>
+              <span style="font-size:12px; font-family:monospace; color:var(--scanner-ink);">${addr}</span>
+            </div>
+          `).join('');
+          setDiagResult(`
+            <div style="margin-bottom:6px; font-size:12px; font-weight:600; color:var(--scanner-ink);">${isIp ? '反向 DNS' : '正向 DNS'} 查询结果（${results.length} 条）</div>
+            <div class="port-list">${itemsHtml}</div>
+            ${server ? `<div class="action-panel-hint" style="margin-top:6px;">DNS 服务器: ${server}</div>` : ''}
+          `);
+        } else {
+          setDiagResult(`<div class="port-empty" style="color:var(--scanner-state-warning);">未找到解析记录</div>`);
+        }
+      } else {
+        setDiagResult(`<div class="port-empty" style="color:var(--scanner-state-error);">查询失败: ${r.error || '未知错误'}</div>`);
+      }
+    } catch (err) {
+      setDiagResult(`<div class="port-empty" style="color:var(--scanner-state-error);">查询异常: ${err.message}</div>`);
+    }
+  }
+
+  // 网速测试
+  async function runSpeedTest(device) {
+    if (!device) return;
+    const panelBody = document.querySelector('#diag-panel .action-panel-body');
+    if (panelBody && panelBody.style.display === 'none') {
+      document.querySelector('#diag-panel .action-panel-header')?.click();
+    }
+    setDiagLoading(`正在测试到 ${device.ip} 的链路质量...`);
+    try {
+      const r = await api.speedTest(device.ip, {});
+      if (r.success) {
+        const metrics = r.metrics || r;
+        const tcpColor = metrics.tcpConnectTime != null ? 'var(--scanner-state-success)' : 'var(--scanner-ink-3)';
+        const quality = metrics.quality || 'unknown';
+        const qualityColor = quality === 'good' ? 'var(--scanner-state-success)' : quality === 'fair' ? 'var(--scanner-state-warning)' : 'var(--scanner-state-error)';
+        const qualityLabel = quality === 'good' ? '优秀' : quality === 'fair' ? '一般' : quality === 'poor' ? '较差' : '未知';
+
+        const rows = [
+          { label: 'TCP 连接时间', value: metrics.tcpConnectTime != null ? `${metrics.tcpConnectTime} ms` : '不可达', color: tcpColor, port: metrics.tcpPort },
+          { label: 'ICMP 延迟', value: metrics.icmpLatency != null ? `${metrics.icmpLatency} ms` : '-', color: 'var(--scanner-ink)' },
+          { label: 'ICMP 丢包率', value: metrics.icmpLoss != null ? `${metrics.icmpLoss}%` : '-', color: metrics.icmpLoss > 0 ? 'var(--scanner-state-error)' : 'var(--scanner-ink)' },
+          { label: '链路质量', value: qualityLabel, color: qualityColor },
+          { label: '评估得分', value: metrics.score != null ? `${metrics.score}/100` : '-', color: 'var(--scanner-ink)' }
+        ];
+        const rowsHtml = rows.map(row => `
+          <div style="display:flex; align-items:center; justify-content:space-between; padding:8px 10px; border-bottom:1px solid var(--scanner-border);">
+            <span style="font-size:12px; color:var(--scanner-ink-2);">${row.label}</span>
+            <span style="font-size:13px; font-weight:600; color:${row.color};">${row.value}${row.port ? ` <span style="font-size:10px; color:var(--scanner-ink-3);">(:${row.port})</span>` : ''}</span>
+          </div>
+        `).join('');
+        setDiagResult(`
+          <div style="margin-bottom:6px; font-size:12px; font-weight:600; color:var(--scanner-ink);">链路质量评估 — ${device.ip}</div>
+          <div class="port-list">${rowsHtml}</div>
+        `);
+      } else {
+        setDiagResult(`<div class="port-empty" style="color:var(--scanner-state-error);">测试失败: ${r.error || '未知错误'}</div>`);
+      }
+    } catch (err) {
+      setDiagResult(`<div class="port-empty" style="color:var(--scanner-state-error);">测试异常: ${err.message}</div>`);
+    }
+  }
+
+  // Wake-on-LAN 远程唤醒
+  async function runWakeOnLan(device) {
+    if (!device) return;
+    if (!device.mac || device.mac === '00:00:00:00:00:00') {
+      showToast('该设备无 MAC 地址，无法发送 WoL 魔术包');
+      return;
+    }
+    const panelBody = document.querySelector('#diag-panel .action-panel-body');
+    if (panelBody && panelBody.style.display === 'none') {
+      document.querySelector('#diag-panel .action-panel-header')?.click();
+    }
+    setDiagLoading(`正在向 ${device.mac} 发送 Wake-on-LAN 魔术包...`);
+    try {
+      const broadcast = selectedAdapter ? selectedAdapter.broadcast : '255.255.255.255';
+      const r = await api.wakeOnLan(device.mac, broadcast);
+      if (r.success) {
+        setDiagResult(`
+          <div style="padding:12px; border-radius:8px; background:var(--scanner-state-success-bg); border:1px solid var(--scanner-state-success); text-align:center;">
+            <i data-lucide="check-circle" style="width:24px; height:24px; color:var(--scanner-state-success); margin-bottom:6px;"></i>
+            <div style="font-size:13px; font-weight:600; color:var(--scanner-state-success);">魔术包已发送</div>
+            <div style="font-size:11px; color:var(--scanner-ink-2); margin-top:4px;">MAC: ${device.mac} | 广播: ${broadcast}</div>
+            <div class="action-panel-hint" style="margin-top:8px;">设备需要支持 WoL 并已配置才能被唤醒</div>
+          </div>
+        `);
+        lucide.createIcons();
+      } else {
+        setDiagResult(`<div class="port-empty" style="color:var(--scanner-state-error);">唤醒失败: ${r.error || '未知错误'}</div>`);
+      }
+    } catch (err) {
+      setDiagResult(`<div class="port-empty" style="color:var(--scanner-state-error);">唤醒异常: ${err.message}</div>`);
+    }
+  }
+
+  // 远程关机 / 重启
+  async function runRemoteShutdown(device) {
+    if (!device) return;
+    const action = confirm(`确定要远程关闭/重启 ${device.ip} 吗？\n\n点击"确定"执行关机，"取消"放弃。\n注意：目标设备需已配置远程关机权限（如 shutdown 命令）。`);
+    if (!action) return;
+
+    const panelBody = document.querySelector('#diag-panel .action-panel-body');
+    if (panelBody && panelBody.style.display === 'none') {
+      document.querySelector('#diag-panel .action-panel-header')?.click();
+    }
+    setDiagLoading(`正在向 ${device.ip} 发送远程关机指令...`);
+    try {
+      const r = await api.remoteShutdown(device.ip, { action: 'shutdown', timeout: 10 });
+      if (r.success) {
+        setDiagResult(`
+          <div style="padding:12px; border-radius:8px; background:var(--scanner-state-warning-bg); border:1px solid var(--scanner-state-warning); text-align:center;">
+            <i data-lucide="alert-triangle" style="width:24px; height:24px; color:var(--scanner-state-warning); margin-bottom:6px;"></i>
+            <div style="font-size:13px; font-weight:600; color:var(--scanner-state-warning);">关机指令已发送</div>
+            <div style="font-size:11px; color:var(--scanner-ink-2); margin-top:4px;">目标: ${device.ip}</div>
+          </div>
+        `);
+        lucide.createIcons();
+      } else {
+        setDiagResult(`<div class="port-empty" style="color:var(--scanner-state-error);">关机失败: ${r.error || '权限不足或目标不支持'}</div>`);
+      }
+    } catch (err) {
+      setDiagResult(`<div class="port-empty" style="color:var(--scanner-state-error);">关机异常: ${err.message}</div>`);
+    }
+  }
+
+  // OS 指纹检测
+  async function runOsDetect(device) {
+    if (!device) return;
+    const resultEl = document.getElementById('portscan-result');
+    if (!resultEl) return;
+    const osBtn = document.getElementById('portscan-os-btn');
+    if (osBtn) osBtn.disabled = true;
+    resultEl.innerHTML = '<div class="port-empty"><div class="action-panel-hint" style="margin-bottom:6px;">正在进行 OS 指纹检测，请稍候...</div></div>';
+    try {
+      const r = await api.detectOs(device);
+      if (r.success) {
+        const os = r.os || {};
+        const confidence = os.confidence != null ? `${Math.round(os.confidence * 100)}%` : '-';
+        const rows = [
+          { label: '操作系统', value: os.name || '未知' },
+          { label: '版本', value: os.version || '-' },
+          { label: '架构', value: os.arch || '-' },
+          { label: '置信度', value: confidence },
+          { label: '检测方法', value: os.method || '-' }
+        ];
+        const rowsHtml = rows.map(row => `
+          <div style="display:flex; align-items:center; justify-content:space-between; padding:8px 10px; border-bottom:1px solid var(--scanner-border);">
+            <span style="font-size:12px; color:var(--scanner-ink-2);">${row.label}</span>
+            <span style="font-size:13px; font-weight:600; color:var(--scanner-ink);">${row.value}</span>
+          </div>
+        `).join('');
+        resultEl.innerHTML = `
+          <div style="margin-bottom:6px; font-size:12px; font-weight:600; color:var(--scanner-ink); display:flex; align-items:center; gap:6px;">
+            <i data-lucide="cpu" style="width:14px; height:14px; color:var(--scanner-primary);"></i>
+            OS 指纹检测结果
+          </div>
+          <div class="port-list">${rowsHtml}</div>
+          ${os.details ? `<div class="action-panel-hint" style="margin-top:6px;">${os.details}</div>` : ''}
+        `;
+        lucide.createIcons();
+      } else {
+        resultEl.innerHTML = `<div class="port-empty" style="color:var(--scanner-state-warning);">OS 检测失败: ${r.error || '无法确定操作系统'}</div>`;
+      }
+    } catch (err) {
+      resultEl.innerHTML = `<div class="port-empty" style="color:var(--scanner-state-error);">OS 检测异常: ${err.message}</div>`;
+    } finally {
+      if (osBtn) osBtn.disabled = false;
+    }
+  }
+
+  // ════════════════════════════════════════════════════════
+  // 可视化统计图表（纯 SVG 实现，无外部依赖）
+  // ════════════════════════════════════════════════════════
+
+  function showVizPanel() {
+    const panel = document.getElementById('viz-panel');
+    panel.style.display = 'flex';
+    renderVendorChart();
+    renderPortChart();
+    renderTrendChart();
+    lucide.createIcons();
+  }
+
+  function hideVizPanel() {
+    const panel = document.getElementById('viz-panel');
+    if (panel) panel.style.display = 'none';
+  }
+
+  // 厂商分布饼图
+  function renderVendorChart() {
+    const el = document.getElementById('viz-vendor-chart');
+    if (!el) return;
+    const vendors = {};
+    devices.forEach(d => {
+      const v = d.type || '未知';
+      vendors[v] = (vendors[v] || 0) + 1;
+    });
+    const entries = Object.entries(vendors).sort((a, b) => b[1] - a[1]);
+    const total = entries.reduce((s, [, n]) => s + n, 0);
+    if (!total) { el.innerHTML = '<div class="port-empty">暂无设备数据</div>'; return; }
+
+    const colors = ['#3b82f6', '#22c55e', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#14b8a6', '#64748b'];
+    const cx = 90, cy = 90, r = 70;
+    let angle = -Math.PI / 2;
+    const slices = entries.map(([name, count], i) => {
+      const pct = count / total;
+      const startAngle = angle;
+      const endAngle = angle + pct * 2 * Math.PI;
+      angle = endAngle;
+      const x1 = cx + r * Math.cos(startAngle);
+      const y1 = cy + r * Math.sin(startAngle);
+      const x2 = cx + r * Math.cos(endAngle);
+      const y2 = cy + r * Math.sin(endAngle);
+      const largeArc = pct > 0.5 ? 1 : 0;
+      const color = colors[i % colors.length];
+      return { name, count, pct, color, path: `M${cx},${cy} L${x1},${y1} A${r},${r} 0 ${largeArc} 1 ${x2},${y2} Z` };
+    });
+
+    const svgSlices = slices.map(s => `<path d="${s.path}" fill="${s.color}" stroke="var(--scanner-card)" stroke-width="2"/>`).join('');
+    const legend = slices.map(s => `
+      <div style="display:flex; align-items:center; gap:6px; font-size:11px;">
+        <span style="width:10px; height:10px; border-radius:2px; background:${s.color};"></span>
+        <span style="color:var(--scanner-ink); flex:1;">${s.name}</span>
+        <span style="color:var(--scanner-ink-2); font-weight:600;">${s.count} (${Math.round(s.pct * 100)}%)</span>
+      </div>
+    `).join('');
+
+    el.innerHTML = `
+      <div style="display:flex; gap:16px; align-items:center;">
+        <svg width="180" height="180" viewBox="0 0 180 180" style="flex-shrink:0;">
+          ${svgSlices}
+          <circle cx="${cx}" cy="${cy}" r="36" fill="var(--scanner-card)"/>
+          <text x="${cx}" y="${cy - 4}" text-anchor="middle" font-size="20" font-weight="700" fill="var(--scanner-ink)">${total}</text>
+          <text x="${cx}" y="${cy + 14}" text-anchor="middle" font-size="10" fill="var(--scanner-ink-3)">设备</text>
+        </svg>
+        <div style="flex:1; display:flex; flex-direction:column; gap:4px;">${legend}</div>
+      </div>
+    `;
+  }
+
+  // 开放端口 Top 10 柱状图
+  function renderPortChart() {
+    const el = document.getElementById('viz-port-chart');
+    if (!el) return;
+    const portCounts = {};
+    devices.forEach(d => {
+      (d.services || []).forEach(s => {
+        const port = typeof s === 'object' ? s.port : s;
+        portCounts[port] = (portCounts[port] || 0) + 1;
+      });
+    });
+    const entries = Object.entries(portCounts).map(([p, c]) => ({ port: parseInt(p), count: c })).sort((a, b) => b.count - a.count).slice(0, 10);
+    if (!entries.length) { el.innerHTML = '<div class="port-empty">暂无端口扫描数据</div>'; return; }
+
+    const maxCount = entries[0].count;
+    const barHeight = 22;
+    const barGap = 6;
+    const labelWidth = 70;
+    const chartWidth = 200;
+
+    const bars = entries.map((e, i) => {
+      const w = (e.count / maxCount) * chartWidth;
+      const y = i * (barHeight + barGap);
+      const svcName = PORT_SERVICES[e.port] || '';
+      return `
+        <g>
+          <text x="${labelWidth - 6}" y="${y + barHeight / 2 + 4}" text-anchor="end" font-size="11" fill="var(--scanner-ink-2)" font-family="monospace">${e.port}</text>
+          <rect x="${labelWidth}" y="${y}" width="${chartWidth}" height="${barHeight}" rx="3" fill="var(--scanner-muted)"/>
+          <rect x="${labelWidth}" y="${y}" width="${w}" height="${barHeight}" rx="3" fill="var(--scanner-primary)"/>
+          <text x="${labelWidth + w + 6}" y="${y + barHeight / 2 + 4}" font-size="11" fill="var(--scanner-ink)" font-weight="600">${e.count}</text>
+          ${svcName ? `<text x="${labelWidth + chartWidth + 30}" y="${y + barHeight / 2 + 4}" font-size="10" fill="var(--scanner-ink-3)">${svcName}</text>` : ''}
+        </g>
+      `;
+    }).join('');
+
+    const totalHeight = entries.length * (barHeight + barGap);
+    el.innerHTML = `
+      <svg width="100%" height="${totalHeight}" viewBox="0 0 ${labelWidth + chartWidth + 100} ${totalHeight}" style="overflow:visible;">
+        ${bars}
+      </svg>
+    `;
+  }
+
+  // 扫描历史趋势图
+  async function renderTrendChart() {
+    const el = document.getElementById('viz-trend-chart');
+    if (!el) return;
+
+    // 从持久化历史数据库加载
+    let records = [];
+    try {
+      const r = await api.historyDbGet(20);
+      records = r.records || [];
+    } catch {
+      // 回退到 localStorage
+    }
+
+    if (!records.length) { el.innerHTML = '<div class="port-empty">暂无扫描历史数据，完成一次扫描后将自动记录</div>'; return; }
+
+    records.reverse(); // 按时间正序
+    const width = 580;
+    const height = 160;
+    const padding = { top: 20, right: 20, bottom: 30, left: 40 };
+    const chartW = width - padding.left - padding.right;
+    const chartH = height - padding.top - padding.bottom;
+
+    const maxOnline = Math.max(...records.map(r => r.onlineCount || 0), 1);
+    const minOnline = 0;
+    const xStep = records.length > 1 ? chartW / (records.length - 1) : 0;
+
+    const points = records.map((r, i) => ({
+      x: padding.left + i * xStep,
+      y: padding.top + chartH - ((r.onlineCount || 0) / maxOnline) * chartH,
+      val: r.onlineCount || 0,
+      time: r.timestamp ? new Date(r.timestamp).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) : '-'
+    }));
+
+    const linePath = points.map((p, i) => `${i === 0 ? 'M' : 'L'}${p.x},${p.y}`).join(' ');
+    const areaPath = linePath + ` L${points[points.length - 1].x},${padding.top + chartH} L${points[0].x},${padding.top + chartH} Z`;
+    const dots = points.map(p => `<circle cx="${p.x}" cy="${p.y}" r="3" fill="var(--scanner-primary)" stroke="var(--scanner-card)" stroke-width="1.5"><title>${p.time}: ${p.val} 台在线</title></circle>`).join('');
+    const labels = points.map((p, i) => {
+      if (records.length > 8 && i % Math.ceil(records.length / 6) !== 0) return '';
+      return `<text x="${p.x}" y="${height - 8}" text-anchor="middle" font-size="9" fill="var(--scanner-ink-3)">${p.time.split(' ')[0] || ''}</text>`;
+    }).join('');
+    const yLabels = [0, Math.round(maxOnline / 2), maxOnline].map((v, i) => {
+      const y = padding.top + chartH - (v / maxOnline) * chartH;
+      return `<text x="${padding.left - 6}" y="${y + 4}" text-anchor="end" font-size="9" fill="var(--scanner-ink-3)">${v}</text>`;
+    }).join('');
+
+    el.innerHTML = `
+      <svg width="100%" height="${height}" viewBox="0 0 ${width} ${height}" style="overflow:visible;">
+        <defs>
+          <linearGradient id="trendGrad" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="var(--scanner-primary)" stop-opacity="0.3"/>
+            <stop offset="100%" stop-color="var(--scanner-primary)" stop-opacity="0"/>
+          </linearGradient>
+        </defs>
+        <line x1="${padding.left}" y1="${padding.top}" x2="${padding.left}" y2="${padding.top + chartH}" stroke="var(--scanner-border)" stroke-width="1"/>
+        <line x1="${padding.left}" y1="${padding.top + chartH}" x2="${padding.left + chartW}" y2="${padding.top + chartH}" stroke="var(--scanner-border)" stroke-width="1"/>
+        ${yLabels}
+        <path d="${areaPath}" fill="url(#trendGrad)"/>
+        <path d="${linePath}" fill="none" stroke="var(--scanner-primary)" stroke-width="2"/>
+        ${dots}
+        ${labels}
+      </svg>
+      <div class="action-panel-hint" style="margin-top:4px;">最近 ${records.length} 次扫描的在线设备数量趋势</div>
+    `;
+  }
+
+  // ════════════════════════════════════════════════════════
+  // 扫描历史持久化
+  // ════════════════════════════════════════════════════════
+
+  async function saveHistoryToDb(record) {
+    try {
+      await api.historyDbSave(record);
+    } catch (err) {
+      console.error('保存历史记录失败:', err);
+    }
+  }
+
   async function init() {
     try {
       localInfo = await api.getLocalInfo();
@@ -3613,6 +4320,8 @@ ${deviceInfo}
       updateScanTarget();
       updateModeButtons();
       updateFilterButtons();
+      // 加载设备元数据（备注 / 标签 / 收藏 / 分组）
+      await loadDeviceMeta();
       renderDevices();
     } catch (err) {
       console.error('Init error:', err);

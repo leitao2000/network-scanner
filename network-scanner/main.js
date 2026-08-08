@@ -109,6 +109,10 @@ ipcMain.handle('network:scan', async (event, options) => {
     }
   });
 
+  scanner.on('error', (error) => {
+    console.error('[Scanner Error]', error);
+  });
+
   try {
     const result = await scanner.scanNetwork(options);
     return { success: true, ...result };
@@ -1112,3 +1116,197 @@ const PORT_SVC_NAMES = {
   1433: 'MSSQL', 1521: 'Oracle', 3306: 'MySQL', 3389: 'RDP',
   5432: 'PostgreSQL', 5900: 'VNC', 6379: 'Redis', 8080: 'HTTP-Alt', 8443: 'HTTPS-Alt', 27017: 'MongoDB'
 };
+
+// ─────────────────────────────────────────────────────────
+//  设备元数据 + 扫描历史 JSON 持久化
+// ─────────────────────────────────────────────────────────
+const fs = require('fs');
+const DEVICE_META_FILE = path.join(app.getPath('userData'), 'device-meta.json');
+const SCAN_HISTORY_FILE = path.join(app.getPath('userData'), 'scan-history.json');
+const HISTORY_DB_MAX = 200; // JSON 文件持久化上限 200 条
+
+function readJsonFile(filePath, defaultVal) {
+  try {
+    if (fs.existsSync(filePath)) {
+      return JSON.parse(fs.readFileSync(filePath, 'utf8'));
+    }
+  } catch (e) { console.warn('读取 JSON 失败:', filePath, e.message); }
+  return defaultVal;
+}
+
+function writeJsonFile(filePath, data) {
+  try {
+    fs.writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf8');
+    return true;
+  } catch (e) {
+    console.warn('写入 JSON 失败:', filePath, e.message);
+    return false;
+  }
+}
+
+// 设备唯一 key：优先 MAC，无 MAC 用 ip
+function deviceKey(device) {
+  if (device && device.mac && device.mac !== '00:00:00:00:00:00') return 'mac:' + device.mac.toUpperCase();
+  return 'ip:' + (device ? device.ip : '');
+}
+
+// ── 设备元数据：备注 / 标签 / 收藏 / 分组 ──
+ipcMain.handle('devicemeta:getAll', async () => {
+  return readJsonFile(DEVICE_META_FILE, { devices: {}, groups: [] });
+});
+
+ipcMain.handle('devicemeta:save', async (event, { device, meta }) => {
+  const data = readJsonFile(DEVICE_META_FILE, { devices: {}, groups: [] });
+  const key = deviceKey(device);
+  data.devices[key] = {
+    ...(data.devices[key] || {}),
+    ...meta,
+    ip: device.ip,
+    mac: device.mac || null,
+    key,
+    updatedAt: Date.now()
+  };
+  writeJsonFile(DEVICE_META_FILE, data);
+  return { success: true, key, meta: data.devices[key] };
+});
+
+ipcMain.handle('devicemeta:delete', async (event, { device }) => {
+  const data = readJsonFile(DEVICE_META_FILE, { devices: {}, groups: [] });
+  const key = deviceKey(device);
+  delete data.devices[key];
+  writeJsonFile(DEVICE_META_FILE, data);
+  return { success: true };
+});
+
+ipcMain.handle('devicemeta:addGroup', async (event, { name }) => {
+  const data = readJsonFile(DEVICE_META_FILE, { devices: {}, groups: [] });
+  const trimmed = (name || '').trim();
+  if (!trimmed) return { success: false, error: '分组名不能为空' };
+  if (!data.groups.includes(trimmed)) data.groups.push(trimmed);
+  writeJsonFile(DEVICE_META_FILE, data);
+  return { success: true, groups: data.groups };
+});
+
+ipcMain.handle('devicemeta:removeGroup', async (event, { name }) => {
+  const data = readJsonFile(DEVICE_META_FILE, { devices: {}, groups: [] });
+  data.groups = data.groups.filter(g => g !== name);
+  // 同步清除设备上的分组引用
+  for (const k of Object.keys(data.devices)) {
+    if (data.devices[k].group === name) delete data.devices[k].group;
+  }
+  writeJsonFile(DEVICE_META_FILE, data);
+  return { success: true, groups: data.groups };
+});
+
+ipcMain.handle('devicemeta:getGroups', async () => {
+  const data = readJsonFile(DEVICE_META_FILE, { devices: {}, groups: [] });
+  return { success: true, groups: data.groups || [] };
+});
+
+// ── 扫描历史数据库持久化（JSON 文件，上限 200 条） ──
+ipcMain.handle('historydb:get', async (event, { limit } = {}) => {
+  const data = readJsonFile(SCAN_HISTORY_FILE, { records: [] });
+  const records = data.records || [];
+  return { success: true, records: limit ? records.slice(0, limit) : records };
+});
+
+ipcMain.handle('historydb:save', async (event, { record }) => {
+  const data = readJsonFile(SCAN_HISTORY_FILE, { records: [] });
+  const rec = {
+    id: record.id || Date.now(),
+    time: record.time || Date.now(),
+    cidr: record.cidr || '',
+    elapsed: record.elapsed || 0,
+    deviceCount: record.deviceCount || 0,
+    onlineCount: record.onlineCount || 0,
+    devices: record.devices || []
+  };
+  data.records.unshift(rec);
+  if (data.records.length > HISTORY_DB_MAX) data.records.length = HISTORY_DB_MAX;
+  writeJsonFile(SCAN_HISTORY_FILE, data);
+  return { success: true, record: rec };
+});
+
+ipcMain.handle('historydb:clear', async () => {
+  writeJsonFile(SCAN_HISTORY_FILE, { records: [] });
+  return { success: true };
+});
+
+ipcMain.handle('historydb:delete', async (event, { id }) => {
+  const data = readJsonFile(SCAN_HISTORY_FILE, { records: [] });
+  data.records = data.records.filter(r => r.id !== id);
+  writeJsonFile(SCAN_HISTORY_FILE, data);
+  return { success: true };
+});
+
+// ─────────────────────────────────────────────────────────
+//  网络诊断工具 IPC Handlers
+// ─────────────────────────────────────────────────────────
+
+// Traceroute 路由追踪
+ipcMain.handle('network:traceroute', async (event, { host, maxHops, timeout }) => {
+  try {
+    return await Scanner.traceroute(host, maxHops || 15, timeout || 1500);
+  } catch (e) {
+    return { success: false, hops: [], error: e.message };
+  }
+});
+
+// Wake-on-LAN 唤醒
+ipcMain.handle('network:wakeOnLan', async (event, { mac, broadcast }) => {
+  try {
+    return await Scanner.wakeOnLan(mac, broadcast);
+  } catch (e) {
+    return { success: false, sent: 0, error: e.message };
+  }
+});
+
+// UDP 端口扫描
+ipcMain.handle('network:scanUdpPorts', async (event, { host, ports, timeout }) => {
+  try {
+    const result = await Scanner.scanUdpPorts(host, ports, timeout || 1500);
+    return { success: true, openPorts: result };
+  } catch (e) {
+    return { success: false, error: e.message };
+  }
+});
+
+// 高级端口扫描（含 Banner Grabbing）
+ipcMain.handle('network:scanPortsAdvanced', async (event, { host, ports, options }) => {
+  try {
+    const scanner = new Scanner();
+    const result = await scanner.scanPortsAdvanced(host, ports, options || {});
+    return { success: true, openPorts: result };
+  } catch (e) {
+    return { success: false, error: e.message };
+  }
+});
+
+// 操作系统检测
+ipcMain.handle('network:detectOs', async (event, { device }) => {
+  try {
+    return { success: true, ...Scanner.detectOs(device) };
+  } catch (e) {
+    return { success: false, error: e.message, os: '未知' };
+  }
+});
+
+// DNS 查询
+ipcMain.handle('network:resolveDns', async (event, { hostname, server }) => {
+  return await Scanner.resolveDns(hostname, server);
+});
+
+// 反向 DNS
+ipcMain.handle('network:reverseDns', async (event, { ip, server }) => {
+  return await Scanner.reverseDns(ip, server);
+});
+
+// 网速测试
+ipcMain.handle('network:speedTest', async (event, { host, options }) => {
+  return await Scanner.speedTest(host, options || {});
+});
+
+// 远程关机/重启
+ipcMain.handle('network:remoteShutdown', async (event, { host, options }) => {
+  return await Scanner.remoteShutdown(host, options || {});
+});
