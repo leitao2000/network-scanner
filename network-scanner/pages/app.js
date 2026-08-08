@@ -1161,7 +1161,7 @@
       { icon: 'activity', label: 'Ping 测试（5 次）', action: () => { showDeviceDetail(device); runPingTest(device); } },
       { icon: 'git-branch', label: '端口扫描', action: () => { showDeviceDetail(device); runPortScan(device, 'common'); } },
       { icon: 'radio', label: '连续监控', action: () => startMonitor(device) },
-      { icon: 'sparkles', label: 'AI 智能分析', action: () => { showDeviceDetail(device); setTimeout(() => runAiAnalysis('full'), 300); } },
+      { icon: 'sparkles', label: 'AI 智能分析', action: () => { showDeviceDetail(device); setTimeout(() => openAiAnalysis('full'), 300); } },
       { divider: true },
       { icon: 'copy', label: '复制 IP 地址', action: () => copyToClipboard(device.ip) },
       { icon: 'copy', label: '复制 MAC 地址', action: () => copyToClipboard(device.mac || '') },
@@ -1896,21 +1896,54 @@
     document.getElementById('ai-provider')?.addEventListener('change', (e) => applyProviderSelection(e.target.value));
     document.getElementById('ai-save-btn')?.addEventListener('click', saveAiConfig);
 
-    // AI 分析按钮（三种分析类型）
+    // AI 分析按钮（三种分析类型）—— 命中缓存直接显示，否则发起分析
     document.querySelectorAll('.ai-type-btn').forEach(btn => {
-      btn.addEventListener('click', () => {
-        setActiveAiType(btn.dataset.type);
-        runAiAnalysis(btn.dataset.type);
-      });
+      btn.addEventListener('click', () => openAiAnalysis(btn.dataset.type));
     });
     document.getElementById('ai-config-link')?.addEventListener('click', openAiConfig);
 
-    // ESC 关闭抽屉/历史面板
+    // ESC 关闭抽屉/历史面板 / 退出全屏 AI 页
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') {
         hideContextMenu();
         document.getElementById('history-panel').style.display = 'none';
+        // 退出全屏 AI 页
+        const page = document.getElementById('ai-full-page');
+        if (page && page.style.display !== 'none') exitFullAiPage();
       }
+      // Alt+1 / Alt+2 / Alt+3 快捷键切换三种 AI 分析（命中缓存直接显示）
+      if (e.altKey && (e.key === '1' || e.key === '2' || e.key === '3')) {
+        e.preventDefault();
+        const map = { '1': 'profile', '2': 'security', '3': 'full' };
+        const type = map[e.key];
+        openAiAnalysis(type);
+      }
+      // Alt+Enter 从侧栏 AI 结果进入全屏页
+      if (e.altKey && e.key === 'Enter') {
+        const el = document.getElementById('ai-analysis-result') || document.querySelector('.ai-analysis-result');
+        if (el && window.__aiLastResult && window.__aiLastResult.rawText) {
+          e.preventDefault();
+          aiFullState.type = window.__aiLastResult.type || 'full';
+          enterFullAiPage(aiFullState.type);
+          renderFullAiResult(window.__aiLastResult.rawText);
+        }
+      }
+    });
+
+    // 全屏 AI 页：类型切换按钮（命中缓存直接显示，无缓存发起分析）
+    ['profile', 'security', 'full'].forEach(type => {
+      const btn = document.getElementById('ai-full-type-' + type);
+      if (!btn) return;
+      btn.addEventListener('click', () => openAiAnalysis(type, { target: 'full' }));
+    });
+  }
+
+  // 高亮全屏页上的 AI 类型按钮
+  function setFullAiTypeBtnActive(type) {
+    ['profile', 'security', 'full'].forEach(t => {
+      const btn = document.getElementById('ai-full-type-' + t);
+      if (!btn) return;
+      btn.classList.toggle('primary', t === type);
     });
   }
 
@@ -1921,6 +1954,106 @@
   let aiStreamCleanup = null;
   let aiAnalyzing = false;
   const isElectron = !!(api && typeof api === 'object');
+
+  // AI 结果缓存：key = `${deviceIp}__${analysisType}`，value = { text, time, riskLevel }
+  const AI_RESULT_CACHE = new Map();
+  const aiCacheKey = (ip, type) => `${String(ip || '')}__${String(type || '')}`;
+  // 当前选中设备下的缓存查询/写入
+  function getCachedAiResult(type) {
+    const key = aiCacheKey(currentDetailDevice?.ip, type);
+    return AI_RESULT_CACHE.get(key) || null;
+  }
+  function setCachedAiResult(type, payload) {
+    const key = aiCacheKey(currentDetailDevice?.ip, type);
+    AI_RESULT_CACHE.set(key, payload);
+  }
+  function clearCachedAiResult(type) {
+    const key = aiCacheKey(currentDetailDevice?.ip, type);
+    AI_RESULT_CACHE.delete(key);
+  }
+  // 统一入口：优先显示缓存，若无则调用 runAiAnalysis；force=true 跳过缓存强制重新分析
+  function openAiAnalysis(type, { force = false, target = 'auto' } = {}) {
+    if (!type) type = 'full';
+    const device = currentDetailDevice;
+    if (!device) { showToast('请先选择一个设备'); return; }
+    setActiveAiType(type);
+
+    const fullPage = document.getElementById('ai-full-page');
+    const inFullPage = target === 'full' || (target === 'auto' && !!(fullPage && fullPage.style.display !== 'none'));
+
+    // 全屏页切换类型时，先进入对应 UI
+    if (inFullPage) {
+      aiFullState.type = type;
+      setFullAiTypeBtnActive(type);
+      enterFullAiPage(type);
+    }
+
+    // force 或无缓存 → 真正发起分析
+    const cached = force ? null : getCachedAiResult(type);
+    if (cached && cached.text) {
+      renderAiResultFromCache(type, cached, inFullPage);
+      return;
+    }
+    if (inFullPage) {
+      setTimeout(() => runAiAnalysis(type), 50);
+    } else {
+      runAiAnalysis(type);
+    }
+  }
+  // 把缓存结果渲染到侧栏 / 全屏页
+  function renderAiResultFromCache(type, cached, inFullPage) {
+    const finalText = cached.text;
+    const typeLabels = { profile: '用户画像分析', security: '安全风险分析', full: '综合分析' };
+    const typeLabel = typeLabels[type] || '综合分析';
+    // 同步更新最近结果（方便其它入口引用）
+    window.__aiLastResult = { type, text: finalText, time: cached.time || Date.now() };
+
+    // 侧栏
+    const resultEl = document.getElementById('ai-result');
+    if (resultEl) {
+      const html = renderMarkdown(finalText);
+      resultEl.innerHTML =
+        '<div class="ai-result-toolbar">' +
+          '<span class="ai-result-label"><i data-lucide="check-circle" style="width:12px;height:12px;color:var(--scanner-state-success);"></i> ' + typeLabel + ' · 缓存</span>' +
+          '<div class="ai-result-actions">' +
+            '<button class="ai-result-btn" id="ai-fullscreen-btn"><i data-lucide="maximize-2" style="width:11px;height:11px;"></i> 展开查看</button>' +
+            '<button class="ai-result-btn" id="ai-copy-btn"><i data-lucide="copy" style="width:11px;height:11px;"></i> 复制</button>' +
+            '<button class="ai-result-btn" id="ai-retry-btn"><i data-lucide="refresh-cw" style="width:11px;height:11px;"></i> 重新分析</button>' +
+          '</div>' +
+        '</div>' +
+        '<div class="ai-analysis-content">' + html + '</div>';
+      document.getElementById('ai-copy-btn')?.addEventListener('click', () => {
+        navigator.clipboard.writeText(finalText).then(() => showToast('已复制到剪贴板'));
+      });
+      document.getElementById('ai-retry-btn')?.addEventListener('click', () => openAiAnalysis(type, { force: true }));
+      document.getElementById('ai-fullscreen-btn')?.addEventListener('click', () => {
+        aiFullState.type = type;
+        enterFullAiPage(type);
+        const riskLevel = cached.riskLevel || 'low';
+        renderFullAiResult(type, finalText, riskLevel);
+        const tEl = document.getElementById('ai-full-time');
+        if (tEl) tEl.textContent = cached.time ? formatRelTime(cached.time) : '缓存';
+        try { lucide.createIcons(); } catch (_) {}
+      });
+    }
+
+    // 全屏页可见时，同步渲染
+    if (inFullPage) {
+      const riskLevel = cached.riskLevel || 'low';
+      renderFullAiResult(type, finalText, riskLevel);
+      const tEl = document.getElementById('ai-full-time');
+      if (tEl) tEl.textContent = cached.time ? formatRelTime(cached.time) : '缓存';
+    }
+    try { lucide.createIcons(); } catch (_) {}
+  }
+  function formatRelTime(ts) {
+    if (!ts) return '缓存';
+    const diff = Math.max(0, Math.floor((Date.now() - ts) / 1000));
+    if (diff < 60) return diff <= 5 ? '刚刚' : diff + ' 秒前';
+    if (diff < 3600) return Math.floor(diff / 60) + ' 分钟前';
+    if (diff < 86400) return Math.floor(diff / 3600) + ' 小时前';
+    return Math.floor(diff / 86400) + ' 天前';
+  }
 
   async function loadAiConfig() {
     if (aiConfigCache) return aiConfigCache;
@@ -2209,12 +2342,18 @@
     let html = md;
     // 转义 HTML
     html = html.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    // 先处理 Markdown 表格（在列表处理之前，避免表格行被识别成列表项）
+    html = renderMarkdownTables(html);
     // 标题
+    html = html.replace(/^#### (.+)$/gm, '<h4>$1</h4>');
     html = html.replace(/^### (.+)$/gm, '<h3>$1</h3>');
+    html = html.replace(/^## (.+)$/gm, '<h2>$1</h2>');
     // 粗体
     html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
     // 行内代码
     html = html.replace(/`(.+?)`/g, '<code>$1</code>');
+    // 分割线
+    html = html.replace(/^\s*---+\s*$/gm, '<hr/>');
     // 无序列表
     html = html.replace(/^- (.+)$/gm, '<li>$1</li>');
     html = html.replace(/(<li>.*<\/li>)/s, '<ul>$1</ul>');
@@ -2226,13 +2365,47 @@
     html = '<p>' + html + '</p>';
     // 清理空段落
     html = html.replace(/<p>\s*<\/p>/g, '');
-    html = html.replace(/<p>(<h3>)/g, '$1');
-    html = html.replace(/(<\/h3>)<\/p>/g, '$1');
+    html = html.replace(/<p>(<h[234]>)/g, '$1');
+    html = html.replace(/(<\/h[234]>)<\/p>/g, '$1');
     html = html.replace(/<p>(<ul>)/g, '$1');
     html = html.replace(/(<\/ul>)<\/p>/g, '$1');
     html = html.replace(/<p>(<li>)/g, '<ul>$1');
     html = html.replace(/(<\/li>)<\/p>/g, '$1</ul>');
+    // 表格清理（表格行外的 <p></p>）
+    html = html.replace(/<p>(<table)/g, '$1');
+    html = html.replace(/(<\/table>)<\/p>/g, '$1');
     return html;
+  }
+
+  // 简易 Markdown 表格解析器
+  function renderMarkdownTables(md) {
+    // 匹配格式：| col1 | col2 |\n|---|---|\n| v1 | v2 |
+    const tableRegex = /(?:^\s*\|[^\n]+\|\s*\n)(?:^\s*\|[\s\-:]+\|\s*\n)?(?:^\s*\|[^\n]+\|\s*\n)+/gm;
+    return md.replace(tableRegex, (tableBlock) => {
+      const lines = tableBlock.split('\n').filter(l => l.trim().startsWith('|'));
+      if (lines.length < 2) return tableBlock;
+      const headerLine = lines[0];
+      const dataLines = lines.slice(1).filter(l => !/^\s*\|[\s\-:]+\|\s*$/.test(l));
+      const parseRow = (line) => line.replace(/^\s*\|/, '').replace(/\|\s*$/, '').split('|').map(c => c.trim());
+      const headers = parseRow(headerLine);
+      const rows = dataLines.map(parseRow);
+      let html = '<table class="md-table">';
+      html += '<thead><tr>';
+      headers.forEach(h => { html += '<th>' + h + '</th>'; });
+      html += '</tr></thead>';
+      if (rows.length) {
+        html += '<tbody>';
+        rows.forEach(row => {
+          html += '<tr>';
+          const n = Math.max(row.length, headers.length);
+          for (let i = 0; i < n; i++) { html += '<td>' + (row[i] || '') + '</td>'; }
+          html += '</tr>';
+        });
+        html += '</tbody>';
+      }
+      html += '</table>';
+      return html;
+    });
   }
 
   // 构建 AI 分析的 prompt
@@ -2263,57 +2436,84 @@ ${svcs}
 ${alerts}`;
 
     if (analysisType === 'profile') {
-      return `你是一位资深网络安全分析师。请根据以下局域网扫描设备信息，分析该设备使用者的"用户画像"。
+      return `你是一位资深网络安全分析师。请根据以下局域网扫描设备信息，生成一份结构详尽的"用户画像分析报告"。
 
 ${deviceInfo}
 
 ## 输出要求
-请用中文，按以下 Markdown 格式输出（不要输出其他内容）：
+请用中文，按以下 Markdown 格式输出（不要输出其他内容，每个小节必须完整输出）：
 
 ### 使用者身份推测
-推测该设备的使用者身份（如管理员、普通员工、IoT 设备、攻击者等），给出判断依据。
+推测该设备的使用者身份（如高级管理员、系统运维、开发人员、普通员工、IoT 设备拥有者、访客、潜在攻击者等），给出 2-4 条具体判断依据。
 
-### 用途场景
-分析该设备可能的用途场景（如办公、开发、监控、文件共享等）。
+### 技能与水平评估
+从网络操作、应用部署、安全意识三个维度评估使用者的技术水平（高/中/低），每一项给出具体判断理由。
 
-### 技术水平评估
-根据开放端口和服务推断使用者的技术水平（高/中/低），给出理由。`;
+### 使用目的分析
+分析该设备的主要使用目的（如日常办公、开发调试、运维管理、监控采集、文件共享、对外服务等），给出依据。
+
+### 设备归属与管理关系
+推测该设备在网络中的角色（终端/服务器/网关/中间件/IoT），以及使用者与设备的可能管理关系（自用/运维他人/共享）。`;
     }
 
     if (analysisType === 'security') {
-      return `你是一位资深网络安全分析师。请根据以下局域网扫描设备信息，分析该设备的"安全风险"。
+      return `你是一位资深网络安全分析师。请根据以下局域网扫描设备信息，生成一份结构详尽的"安全风险分析报告"。
 
 ${deviceInfo}
 
 ## 输出要求
-请用中文，按以下 Markdown 格式输出（不要输出其他内容）：
+请用中文，按以下 Markdown 格式输出（不要输出其他内容，每个小节必须完整输出）：
 
-### 风险评估总览
-给出整体安全风险等级（高/中/低），一句话概括。
+### 风险总评
+用一句话给出整体安全风险等级（严重/高/中/低），并用 3-5 条具体数据支撑。
 
-### 风险点详解
-列出每个风险点，标注风险等级（高/中/低），包括端口暴露、协议安全、权限风险、潜在攻击面等。
+### 端口风险明细表
+用 Markdown 表格形式列出所有开放端口的风险：列包括「端口」「服务」「风险等级」「风险说明」「攻击方式」。
 
-### 加固建议
-给出 3-5 条具体可操作的安全加固建议。`;
+### 暴露面与攻击路径
+分析该设备的外部暴露面，列出 2-3 条可能的攻击路径（从外部攻击者视角，说明每一步如何利用现有端口/服务渗透进来）。
+
+### 加固优先级建议
+按紧急程度从高到低排列 5 条具体可操作的加固建议，每条建议标注预期收益（高/中/低）。`;
     }
 
-    // full
-    return `你是一位资深网络安全分析师。请根据以下局域网扫描设备信息，从"用户画像"和"安全风险"两个维度进行全面分析。
+    // full —— 综合分析
+    return `你是一位资深网络安全分析师。请根据以下局域网扫描设备信息，生成一份结构详尽的"设备 AI 综合分析报告"。
 
 ${deviceInfo}
 
 ## 输出要求
-请用中文，按以下 Markdown 格式输出（不要输出其他内容）：
+请用中文，按以下 Markdown 格式输出（不要输出其他内容，每个小节必须完整输出）：
 
-### 用户画像
-推测该设备的使用者身份、用途场景、技术水平等。
+### 一、使用者画像
+#### 身份推测
+推测该设备的使用者身份，给出 2-4 条具体判断依据。
+#### 技能与水平评估
+从网络操作、应用部署、安全意识三个维度评估使用者的技术水平，每一项给出具体判断理由。
+#### 使用目的
+分析该设备的主要使用目的，给出依据。
+#### 设备角色
+推测该设备在网络拓扑中的角色（终端/服务器/网关/中间件/IoT/摄像头/打印机等）。
 
-### 安全风险
-列出风险点并给出风险等级（高/中/低），包括端口暴露、协议安全、权限风险等。
+### 二、安全风险评估
+#### 风险总评
+用一句话给出整体安全风险等级（严重/高/中/低），并用 3-5 条具体数据支撑。
+#### 端口风险明细表
+用 Markdown 表格形式列出所有开放端口的风险：列包括「端口」「服务」「风险等级」「风险说明」。
+#### 暴露面分析
+分析该设备的外部暴露面（端口数量、协议类型、对外服务性质）。
 
-### 建议措施
-给出 3-5 条具体可操作的安全加固建议。`;
+### 三、攻击路径推演
+按以下时间线结构，列出 3-5 条可能的攻击路径：
+- 第一步：攻击者通过 XX 入口进入（如端口扫描、弱口令、未授权服务等）
+- 第二步：利用 XX 漏洞/服务做什么
+- 第三步：最终获取 XX 权限或数据
+
+### 四、加固建议
+按紧急程度从高到低排列 5-7 条具体可操作的加固建议。
+
+### 五、总结
+用 2-3 句话总结该设备的核心安全状况。`;
   }
 
   // 多字段兼容解析：适配各种 OpenAI 兼容中间件（OneAPI/NewAPI/国内代理等）
@@ -2650,6 +2850,296 @@ ${deviceInfo}
     } catch (_) { /* ignore */ }
   }
 
+  // ── AI 独立全屏报告页 ────────────────────────────────────────
+  let aiFullState = { type: 'full', running: false, streamedText: '' };
+
+  // 设备类型中文标签映射
+  const DEVICE_CATEGORY_LABELS = {
+    router: '路由器/网关',
+    computer: '电脑/工作站',
+    phone: '手机/移动设备',
+    iot: 'IoT 物联网设备',
+    camera: '网络摄像头',
+    virtual: '虚拟设备',
+    printer: '打印机',
+    server: '服务器',
+    unknown: '未知设备'
+  };
+  function deviceCategoryLabel(cat) {
+    return DEVICE_CATEGORY_LABELS[cat] || cat || '未知设备';
+  }
+
+  function enterFullAiPage(type) {
+    const page = document.getElementById('ai-full-page');
+    if (!page) return;
+    if (!currentDetailDevice) {
+      showToast('请先选择一个设备');
+      return;
+    }
+    aiFullState.type = type || 'full';
+    page.style.display = 'flex';
+    setFullAiTypeBtnActive(aiFullState.type);
+
+    // 填充设备信息卡（双栏布局的新 -v2 DOM 是主显示，旧 DOM 被 CSS 隐藏）
+    const d = currentDetailDevice;
+    const nameEl = document.getElementById('ai-full-device-name-v2');
+    const metaEl = document.getElementById('ai-full-device-meta-v2');
+    const tagsEl = document.getElementById('ai-full-device-tags-v2');
+    const iconEl = document.getElementById('ai-full-device-icon-v2');
+    const iconMap = { router: 'router', computer: 'monitor', phone: 'smartphone', iot: 'cpu', camera: 'video', virtual: 'box', unknown: 'help-circle', printer: 'printer', server: 'server' };
+    const iconName = iconMap[d.category] || 'server';
+    if (iconEl) iconEl.innerHTML = `<i data-lucide="${iconName}"></i>`;
+    if (nameEl) nameEl.textContent = d.name || d.hostname || d.ip || '未知设备';
+    const metaParts = [d.ip, d.mac].filter(Boolean);
+    if (d.vendor) metaParts.push(d.vendor);
+    metaParts.push(d.category ? (deviceCategoryLabel(d.category) || d.category) : '未知类型');
+    if (metaEl) metaEl.textContent = metaParts.join(' · ');
+    // 标签
+    const tagList = [];
+    if (d.category) tagList.push({ label: deviceCategoryLabel(d.category) || d.category, cls: 'ai-badge-primary' });
+    if (d.services && d.services.length) tagList.push({ label: `${d.services.length} 个端口`, cls: 'ai-badge-success' });
+    if (d.online === true || d.latency != null) tagList.push({ label: '在线', cls: 'ai-badge-success' });
+    const criticalCount = (activeAlerts || []).filter(a => a.ip === d.ip && a.severity === 'high').length;
+    if (criticalCount > 0) tagList.push({ label: `${criticalCount} 条高危`, cls: 'ai-badge-error' });
+    if (tagsEl) tagsEl.innerHTML = tagList.map(t => `<span class="ai-badge ${t.cls}">${t.label}</span>`).join('');
+    // 统计（2x2 grid）
+    const portsNum = (d.services || []).length;
+    const alertsForDevice = (activeAlerts || []).filter(a => a.ip === d.ip);
+    const alertsNum = alertsForDevice.length;
+    const cidrVal = selectedAdapter?.cidr || '-';
+    const riskLevel = aiFullRiskLevel(alertsNum, portsNum);
+    document.getElementById('ai-full-stat-ports-v2').textContent = String(portsNum);
+    document.getElementById('ai-full-stat-alerts-v2').textContent = String(alertsNum);
+    document.getElementById('ai-full-stat-cidr-v2').textContent = cidrVal;
+    const riskElV2 = document.getElementById('ai-full-stat-risk-v2');
+    riskElV2.textContent = aiFullRiskText(riskLevel);
+    riskElV2.className = 'ai-full-stat-value ai-risk-' + riskLevel;
+
+    // 时间戳
+    const timeEl = document.getElementById('ai-full-time');
+    if (timeEl) timeEl.textContent = '刚刚';
+
+    // 【左栏端口列表】
+    const portListEl = document.getElementById('ai-full-port-list');
+    if (portListEl) {
+      if (!d.services || d.services.length === 0) {
+        portListEl.innerHTML = '<div class="ai-full-port-empty">暂无端口数据</div>';
+      } else {
+        portListEl.innerHTML = (d.services || []).slice(0, 30).map(s => {
+          const port = typeof s === 'object' ? s.port : s;
+          const svc = typeof s === 'object' ? (s.name || PORT_SERVICES[port] || '未知') : (PORT_SERVICES[s] || '未知');
+          const risk = typeof s === 'object' ? (s.risk || 'low') : 'low';
+          const riskCls = risk === 'high' ? 'high' : risk === 'medium' ? 'med' : '';
+          const riskText = risk === 'high' ? '高危' : risk === 'medium' ? '中危' : '';
+          return `<div class="ai-full-port-item">
+            <span class="ai-full-port-num">${port}</span>
+            <span class="ai-full-port-svc" title="${svc}">${svc}</span>
+            ${riskText ? `<span class="ai-full-port-risk ${riskCls}">${riskText}</span>` : ''}
+          </div>`;
+        }).join('');
+      }
+    }
+
+    // 【左栏安全告警列表】
+    const alertListEl = document.getElementById('ai-full-alert-list');
+    if (alertListEl) {
+      if (!alertsForDevice.length) {
+        alertListEl.innerHTML = '<div class="ai-full-alert-empty">该设备暂未发现安全告警</div>';
+      } else {
+        alertListEl.innerHTML = alertsForDevice.map(a => {
+          const isWarn = a.severity === 'medium' || a.severity === 'warn';
+          return `<div class="ai-full-alert-item ${isWarn ? 'warn' : ''}">
+            <div class="ai-full-alert-title">${a.title || a.name || '安全告警'}</div>
+            <div class="ai-full-alert-desc">${a.desc || a.detail || ''}</div>
+          </div>`;
+        }).join('');
+      }
+    }
+
+    // 绑定左侧快捷操作（防抖 dataset.bound 避免重复绑定）
+    bindFullQuickActions(d);
+
+    // 渲染加载态
+    renderFullAiLoading(`AI ${aiFullTypeLabel(type)}进行中...`);
+
+    // 绑定顶部按钮（返回 / 重新分析 / 复制）
+    const backBtn = document.getElementById('ai-full-back');
+    if (backBtn && !backBtn.dataset.bound) {
+      backBtn.dataset.bound = '1';
+      backBtn.addEventListener('click', exitFullAiPage);
+    }
+    const regenBtn = document.getElementById('ai-full-regen');
+    if (regenBtn && !regenBtn.dataset.bound) {
+      regenBtn.dataset.bound = '1';
+      regenBtn.addEventListener('click', () => {
+        openAiAnalysis(aiFullState.type, { force: true, target: 'full' });
+      });
+    }
+    const copyBtn = document.getElementById('ai-full-copy');
+    if (copyBtn && !copyBtn.dataset.bound) {
+      copyBtn.dataset.bound = '1';
+      copyBtn.addEventListener('click', () => {
+        const content = document.getElementById('ai-full-content-v2');
+        if (!content) return;
+        const body = content.querySelector('.ai-full-content-body') || content;
+        const text = body ? body.innerText : '';
+        if (!text) { showToast('没有可复制的内容'); return; }
+        navigator.clipboard.writeText(text).then(() => showToast('报告已复制到剪贴板'));
+      });
+    }
+
+    // 图标刷新（左栏 h4 插入了新的 i[data-lucide]）
+    try { lucide.createIcons(); } catch (_) {}
+  }
+
+  // 绑定左栏快捷操作（只绑一次）
+  let fullQuickBound = false;
+  function bindFullQuickActions(device) {
+    if (fullQuickBound) return;
+    fullQuickBound = true;
+    // Ping
+    const pingBtn = document.getElementById('ai-full-q-ping');
+    if (pingBtn) pingBtn.addEventListener('click', async () => {
+      if (!device?.ip) return;
+      exitFullAiPage();
+      // 选中设备，切换到 Ping tab，发起 Ping
+      selectDevice(device);
+      document.getElementById('tab-ping')?.click();
+      const startPingBtn = document.getElementById('btn-ping-start');
+      if (startPingBtn) setTimeout(() => startPingBtn.click(), 80);
+      showToast(`已切换到 Ping 面板：${device.ip}`);
+    });
+    // 端口扫描
+    const portsBtn = document.getElementById('ai-full-q-ports');
+    if (portsBtn) portsBtn.addEventListener('click', async () => {
+      if (!device?.ip) return;
+      exitFullAiPage();
+      selectDevice(device);
+      document.getElementById('tab-portscan')?.click();
+      const fullBtn = document.getElementById('port-scan-full') ||
+        Array.from(document.querySelectorAll('.port-range-btn, #port-scan-all-btn, button[data-range="full"]')).find(b => b.innerText.includes('全端口') || b.innerText.includes('全部'));
+      if (fullBtn) setTimeout(() => fullBtn.click(), 80);
+      showToast(`已切换到端口扫描面板：${device.ip}`);
+    });
+    // 重新识别厂商
+    const vendorBtn = document.getElementById('ai-full-q-vendor');
+    if (vendorBtn) vendorBtn.addEventListener('click', async () => {
+      if (!device?.mac && !device?.ip) { showToast('设备信息不全'); return; }
+      showToast('正在重新识别设备厂商/OUI...');
+      // 若有补证接口则触发；否则提示用户重新发起全量扫描
+      if (isElectron && api.enrichDevice) {
+        try {
+          const r = await api.enrichDevice({ ip: device.ip });
+          if (r && r.success && r.device) {
+            Object.assign(device, r.device);
+            selectDevice(device);
+            enterFullAiPage(aiFullState.type);
+            showToast('厂商信息已更新');
+          } else {
+            showToast('未获取到新的厂商信息');
+          }
+        } catch (_) { showToast('识别失败，请重试'); }
+      } else {
+        showToast('请关闭后重新扫描以识别厂商');
+      }
+    });
+    // 复制 IP
+    const copyIpBtn = document.getElementById('ai-full-q-copy-ip');
+    if (copyIpBtn) copyIpBtn.addEventListener('click', () => {
+      if (!device?.ip) return;
+      navigator.clipboard.writeText(device.ip).then(() => showToast(`IP ${device.ip} 已复制`));
+    });
+    // 返回设备详情
+    const closeBtn = document.getElementById('ai-full-q-close-detail');
+    if (closeBtn) closeBtn.addEventListener('click', () => {
+      exitFullAiPage();
+      showToast('已返回设备详情');
+    });
+  }
+
+  function exitFullAiPage() {
+    const page = document.getElementById('ai-full-page');
+    if (page) page.style.display = 'none';
+  }
+
+  function aiFullTypeLabel(type) {
+    return { profile: '用户画像分析', security: '安全风险分析', full: '综合分析' }[type] || '综合分析';
+  }
+
+  function aiFullRiskLevel(alerts, ports) {
+    if (alerts >= 3) return 'critical';
+    if (alerts >= 1 || ports >= 10) return 'high';
+    if (ports >= 5) return 'medium';
+    return 'low';
+  }
+
+  function aiFullRiskText(level) {
+    return { low: '低风险', medium: '中等风险', high: '高风险', critical: '严重风险' }[level] || '-';
+  }
+
+  function renderFullAiLoading(title) {
+    const c = document.getElementById('ai-full-content-v2') || document.getElementById('ai-full-content');
+    if (!c) return;
+    c.innerHTML = `
+      <div class="ai-full-loading">
+        <div class="ai-full-loading-title"><span class="dot"></span> ${title}</div>
+        <div class="ai-full-loading-meta" id="ai-full-loading-meta-v2">正在建立连接并构造请求...</div>
+        <div class="ai-full-loading-bar"><div class="ai-full-loading-bar-inner"></div></div>
+      </div>`;
+    try { lucide.createIcons(); } catch (_) {}
+  }
+
+  function renderFullAiResult(type, text, riskLevel) {
+    const c = document.getElementById('ai-full-content-v2') || document.getElementById('ai-full-content');
+    if (!c) return;
+    const typeLabel = aiFullTypeLabel(type);
+    const level = riskLevel || 'low';
+    const badge = `<span class="ai-full-risk-badge ${level}">${aiFullRiskText(level)}</span>`;
+    c.innerHTML =
+      `<div class="ai-full-result-header">
+         <div class="ai-full-result-title"><i data-lucide="sparkles"></i> AI ${typeLabel}报告</div>
+         ${badge}
+       </div>` +
+      `<div class="ai-full-content-body">${renderMarkdown(text)}</div>`;
+    try { lucide.createIcons(); } catch (_) {}
+  }
+
+  function renderFullAiError(errMsg) {
+    const c = document.getElementById('ai-full-content-v2') || document.getElementById('ai-full-content');
+    if (!c) return;
+    c.innerHTML = `<div class="ai-full-error">
+      <i data-lucide="alert-triangle" style="width:20px;height:20px;"></i><br/>
+      <b style="margin-top:8px;display:inline-block;">分析失败</b>
+      <div style="margin-top:10px;word-break:break-all;">${errMsg || '未知错误'}</div>
+    </div>`;
+    try { lucide.createIcons(); } catch (_) {}
+  }
+
+  // 将 AI 流式 chunk 追加到全屏页的结果区（供 runAiAnalysis 调用）
+  function appendFullAiChunk(chunk) {
+    const c = document.getElementById('ai-full-content-v2') || document.getElementById('ai-full-content');
+    if (!c) return;
+    if (!aiFullState.streamedText) {
+      // 首次 chunk：切换到流式输出状态，显示基础框架
+      aiFullState.streamedText = '';
+      const typeLabel = aiFullTypeLabel(aiFullState.type);
+      c.innerHTML =
+        `<div class="ai-full-result-header">
+           <div class="ai-full-result-title"><i data-lucide="sparkles"></i> AI ${typeLabel}报告</div>
+           <span class="ai-full-risk-badge low">生成中</span>
+         </div>` +
+        `<div class="ai-full-content-body" id="ai-full-stream-body"></div>`;
+      try { lucide.createIcons(); } catch (_) {}
+    }
+    aiFullState.streamedText += chunk;
+    const body = document.getElementById('ai-full-stream-body');
+    if (body) {
+      body.innerHTML = renderMarkdown(aiFullState.streamedText);
+    } else {
+      // body 不存在（可能已被替换成最终版本），不追加
+    }
+  }
+
   async function runAiAnalysis(analysisType) {
     analysisType = analysisType || 'full';
     // 进入时立即同步高亮（保证无论从哪个入口调用都一致）
@@ -2671,10 +3161,16 @@ ${deviceInfo}
     aiAnalyzing = true;
     const resultEl = document.getElementById('ai-result');
     const typeBtns = document.querySelectorAll('.ai-type-btn');
+    const fullTypeBtns = document.querySelectorAll('.ai-full-type-switch .ai-full-btn');
+    const fullRegenBtn = document.getElementById('ai-full-regen');
     const typeLabels = { profile: '用户画像分析', security: '安全风险分析', full: '综合分析' };
+    const fullPage = document.getElementById('ai-full-page');
+    const isFullPageVisible = !!(fullPage && fullPage.style.display !== 'none');
 
-    // 禁用所有按钮
+    // 禁用所有按钮（侧栏类型按钮 + 全屏页类型切换/重新分析按钮）
     typeBtns.forEach(b => b.disabled = true);
+    fullTypeBtns.forEach(b => b.disabled = true);
+    if (fullRegenBtn) fullRegenBtn.disabled = true;
 
     // 加载状态（支持 meta 局部替换或整体重渲染）
     let loadingMetaNode = null;
@@ -2692,6 +3188,16 @@ ${deviceInfo}
       if (loadingMetaNode && loadingMetaNode.isConnected) {
         loadingMetaNode.dataset.elapsed = secText;
         loadingMetaNode.textContent = loadingMetaNode.textContent.replace(/等待响应 \([0-9.]+s\)/, `等待响应 (${secText}s)`);
+      }
+      // 同步更新全屏页 loading 上的等待计时
+      const fullMeta = document.getElementById('ai-full-loading-meta-v2');
+      if (fullMeta) {
+        fullMeta.dataset.elapsed = secText;
+        if (fullMeta.textContent.includes('等待响应')) {
+          fullMeta.textContent = fullMeta.textContent.replace(/等待响应[^\n]*/, `等待响应 · ${secText}s`);
+        } else {
+          fullMeta.textContent = `模型请求中 · 等待响应 (${secText}s)`;
+        }
       }
     };
     let loadingTimer = null;
@@ -2719,6 +3225,11 @@ ${deviceInfo}
           '</div>' +
           '<div class="ai-analysis-content">' + renderMarkdown(streamedText) + '</div>';
         resultEl.scrollTop = resultEl.scrollHeight;
+        // 全屏页可见时，同步追加流式 chunk
+        if (isFullPageVisible) {
+          aiFullState.streamedText = streamedText;
+          appendFullAiChunk(chunk);
+        }
       };
 
       // 清理 + 重新挂接 Electron 流式监听
@@ -2765,20 +3276,51 @@ ${deviceInfo}
 
       if (result.success && finalText && finalText.trim().length > 0) {
         const html = renderMarkdown(finalText);
+        const portsNum = (currentDetailDevice?.ports || []).length;
+        const alertsNum = (activeAlerts || []).filter(a => a.ip === currentDetailDevice?.ip).length;
+        const riskLevel = aiFullRiskLevel(alertsNum, portsNum);
+        // 写入缓存：按设备 IP + 分析类型
+        setCachedAiResult(analysisType, { text: finalText, time: Date.now(), riskLevel });
+        // 保存最近一次分析结果，供「展开全屏查看」按钮使用
+        window.__aiLastResult = { type: analysisType, text: finalText, time: Date.now() };
         resultEl.innerHTML =
           '<div class="ai-result-toolbar">' +
             '<span class="ai-result-label"><i data-lucide="check-circle" style="width:12px;height:12px;color:var(--scanner-state-success);"></i> ' + typeLabels[analysisType] + ' · 已完成</span>' +
             '<div class="ai-result-actions">' +
+              '<button class="ai-result-btn" id="ai-fullscreen-btn"><i data-lucide="maximize-2" style="width:11px;height:11px;"></i> 展开查看</button>' +
               '<button class="ai-result-btn" id="ai-copy-btn"><i data-lucide="copy" style="width:11px;height:11px;"></i> 复制</button>' +
               '<button class="ai-result-btn" id="ai-retry-btn"><i data-lucide="refresh-cw" style="width:11px;height:11px;"></i> 重新分析</button>' +
             '</div>' +
           '</div>' +
           '<div class="ai-analysis-content">' + html + '</div>';
-        // 绑定复制和重新分析
+        // 绑定复制、重新分析、展开全屏
         document.getElementById('ai-copy-btn')?.addEventListener('click', () => {
           navigator.clipboard.writeText(finalText).then(() => showToast('已复制到剪贴板'));
         });
-        document.getElementById('ai-retry-btn')?.addEventListener('click', () => runAiAnalysis(analysisType));
+        document.getElementById('ai-retry-btn')?.addEventListener('click', () => openAiAnalysis(analysisType, { force: true }));
+        document.getElementById('ai-fullscreen-btn')?.addEventListener('click', () => {
+          enterFullAiPage(analysisType);
+          const last = window.__aiLastResult;
+          if (last && last.type === analysisType) {
+            const portsNum = (currentDetailDevice?.ports || []).length;
+            const alertsNum = (activeAlerts || []).filter(a => a.ip === currentDetailDevice?.ip).length;
+            const riskLevel = aiFullRiskLevel(alertsNum, portsNum);
+            renderFullAiResult(analysisType, last.text, riskLevel);
+            const tEl = document.getElementById('ai-full-time');
+            if (tEl) tEl.textContent = '刚刚';
+          }
+          try { lucide.createIcons(); } catch (_) {}
+        });
+        // 全屏页可见时，同步渲染最终结果
+        if (isFullPageVisible) {
+          const portsNum = (currentDetailDevice?.ports || []).length;
+          const alertsNum = (activeAlerts || []).filter(a => a.ip === currentDetailDevice?.ip).length;
+          const riskLevel = aiFullRiskLevel(alertsNum, portsNum);
+          renderFullAiResult(analysisType, finalText, riskLevel);
+          const tEl = document.getElementById('ai-full-time');
+          if (tEl) tEl.textContent = '刚刚';
+          try { lucide.createIcons(); } catch (_) {}
+        }
       } else {
         resultEl.innerHTML =
           '<div class="ai-analysis-error">' +
@@ -2787,6 +3329,10 @@ ${deviceInfo}
           '<div style="margin-top:8px;line-height:1.7;word-break:break-all;">' +
           (result.error || 'AI 返回内容为空，请检查模型配置或更换模型') +
           '</div></div>';
+        // 全屏页可见时，同步渲染错误
+        if (isFullPageVisible) {
+          renderFullAiError(result.error || 'AI 返回内容为空，请检查模型配置或更换模型');
+        }
       }
       lucide.createIcons();
     } catch (e) {
@@ -2796,11 +3342,17 @@ ${deviceInfo}
         '<b>分析异常</b>' +
         '<div style="margin-top:8px;line-height:1.7;">' + (e && e.message ? e.message : String(e)) + '</div>' +
         '</div>';
+      // 全屏页可见时，同步渲染异常
+      if (isFullPageVisible) {
+        renderFullAiError(e && e.message ? e.message : String(e));
+      }
       lucide.createIcons();
     } finally {
       stopLoadingTimer();
       aiAnalyzing = false;
       typeBtns.forEach(b => b.disabled = false);
+      fullTypeBtns.forEach(b => b.disabled = false);
+      if (fullRegenBtn) fullRegenBtn.disabled = false;
     }
   }
 

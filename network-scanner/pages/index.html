@@ -202,6 +202,177 @@ body {
       .ring-destructive { --tw-ring-color: var(--scanner-destructive); }
     </style>
     <style>
+      /* ==========================================================
+         高密度专业风（紧凑 / 小间距 / 小圆角）——覆盖层
+         ========================================================== */
+      :root {
+        /* 缩小 base spacing 尺度 */
+        --dense-px: 0.9px;
+      }
+      html, body {
+        font-size: 13px;  /* 原 14/15 → 13px base */
+        -webkit-font-smoothing: antialiased;
+      }
+      /* 圆角收敛：xl→md, lg→sm, pill→sm  */
+      .rounded-xl, .rounded-lg {
+        border-radius: var(--scanner-radius-md) !important;
+      }
+      /* 扫描卡片 & 顶部区 —— p-5 sm:p-7 → p-3.5 sm:p-4 */
+      [data-shell="main"] > header > div {
+        padding: 8px 16px !important;
+      }
+      header h1 {
+        font-size: 13.5px !important;
+      }
+      header p {
+        font-size: 10.5px !important;
+      }
+      [data-scroll-region="primary"] {
+        padding: 14px !important;
+        gap: 12px !important;
+      }
+      [data-region="scan-controls"],
+      [data-region="results"],
+      .history-panel {
+        border-radius: var(--scanner-radius-md) !important;
+      }
+      [data-region="scan-controls"] {
+        padding: 12px 14px !important;
+      }
+      [data-region="scan-controls"] .flex.gap-4 {
+        gap: 10px !important;
+      }
+      [data-region="scan-controls"] .mt-4 {
+        margin-top: 10px !important;
+      }
+      /* 汇总卡片 瘦身：p-5 → p-3, gap 更紧 */
+      [data-region="scan-summary"] {
+        grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+        gap: 8px !important;
+      }
+      [data-region="scan-summary"] > div {
+        padding: 10px 12px !important;
+        border-radius: var(--scanner-radius-md) !important;
+        gap: 10px !important;
+      }
+      [data-region="scan-summary"] > div .w-9 {
+        width: 30px !important;
+        height: 30px !important;
+        border-radius: var(--scanner-radius-sm) !important;
+      }
+      [data-region="scan-summary"] p.text-xl {
+        font-size: 16px !important;
+        line-height: 1.2;
+      }
+      [data-region="scan-summary"] p.text-xs {
+        font-size: 10.5px !important;
+      }
+      [data-region="scan-summary"] .text-\[10px\] {
+        font-size: 9.5px !important;
+      }
+      /* Tab 栏更紧 */
+      [data-region="results"] > div:first-child {
+        padding: 0 14px !important;
+      }
+      .tab-btn {
+        padding: 8px 10px !important;
+        font-size: 12.5px !important;
+      }
+      .filter-btn, .mode-btn {
+        padding: 5px 10px !important;
+        font-size: 11.5px !important;
+      }
+      /* 搜索输入框 py-2 → py-1.5 */
+      #scan-target, #search-input, #search-input-mobile {
+        padding-top: 6px !important;
+        padding-bottom: 6px !important;
+        font-size: 12.5px !important;
+      }
+      /* 开始按钮 压缩 */
+      #btn-start, #btn-stop {
+        padding: 6px 12px !important;
+        font-size: 12.5px !important;
+        border-radius: var(--scanner-radius-md) !important;
+      }
+      /* 表格行高密度 */
+      #device-table-body tr {
+        height: 32px !important;
+      }
+      #device-table-body td {
+        padding: 4px 10px !important;
+        font-size: 12px !important;
+      }
+      #device-table thead th {
+        padding: 7px 10px !important;
+        font-size: 11.5px !important;
+        font-weight: 600;
+      }
+      /* 侧栏 detail-sidebar 紧凑 */
+      .detail-sidebar h3 {
+        font-size: 12.5px !important;
+      }
+      .detail-sidebar .px-5,
+      .detail-sidebar .p-5 {
+        padding: 12px 14px !important;
+      }
+      .detail-sidebar .py-4 {
+        padding-top: 10px !important;
+        padding-bottom: 10px !important;
+      }
+      .detail-sidebar .space-y-2 > * + * {
+        margin-top: 6px !important;
+      }
+      /* AI 分析按钮组更紧 + 快捷键小标签 */
+      .ai-action-btns {
+        gap: 6px !important;
+      }
+      .ai-action-btns .action-btn {
+        padding: 6px 10px !important;
+        font-size: 11.5px !important;
+        height: 30px !important;
+        border-radius: var(--scanner-radius-sm) !important;
+      }
+      .ai-kbd {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        margin-left: 6px;
+        padding: 0 5px;
+        height: 14px;
+        font-family: var(--scanner-font-mono);
+        font-size: 9px;
+        font-weight: 600;
+        color: var(--scanner-ink-2);
+        background: var(--scanner-muted);
+        border: 1px solid var(--scanner-border);
+        border-radius: 3px;
+        line-height: 1;
+      }
+      .action-btn.primary .ai-kbd {
+        color: #fff;
+        background: rgba(255,255,255,0.18);
+        border-color: rgba(255,255,255,0.3);
+      }
+      /* 端口列表更紧凑 */
+      .port-item {
+        padding: 4px 8px !important;
+        gap: 6px !important;
+      }
+      /* 工具栏按钮 瘦身 */
+      #btn-alerts, #btn-history, #btn-ai-config, #btn-export, #btn-settings {
+        padding: 5px 9px !important;
+        font-size: 11.5px !important;
+        height: 30px;
+      }
+      /* 加载动画 p-3 → p-2 */
+      #scan-loading > div {
+        padding: 8px 12px !important;
+      }
+      /* 历史记录面板紧凑化 */
+      .history-panel-header { padding: 10px 12px !important; }
+      .history-item { padding: 8px 10px !important; }
+    </style>
+    <style>
       .no-scrollbar::-webkit-scrollbar { display: none; }
       .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
       [data-icon] {
@@ -497,7 +668,18 @@ body {
       }
       .action-btn.primary:hover { opacity: 0.9; }
       .action-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-      .action-btn i { width: 13px; height: 13px; }
+      .action-btn.ghost {
+        background: transparent;
+        border-style: dashed;
+      }
+      /* lucide.createIcons 会把 <i data-lucide> 替换成 <svg class="lucide">，必须一起加尺寸 */
+      .action-btn i,
+      .action-btn svg,
+      .action-btn .lucide {
+        width: 15px;
+        height: 15px;
+        flex: 0 0 auto;      /* 防止 flex 布局下图标被压缩 */
+      }
       .action-panel-hint {
         font-size: 11px;
         color: var(--scanner-ink-3);
@@ -849,93 +1031,172 @@ body {
         gap: 8px;
         margin-bottom: 8px;
       }
+      /* =========================================================
+         AI 智能分析区 —— 专业运维工具风（与 Ping/端口扫描统一）
+         核心约束：不去 AI 味（禁用紫粉蓝炫彩渐变主视觉、圆角≤10px、
+                  线性 SVG 图标不用 emoji、仅 hover/focus 克制动画）
+         ========================================================= */
+
+      /* ---------- 操作区：类型按钮组 + 配置按钮 ---------- */
+      .ai-action-row {
+        justify-content: space-between;
+        align-items: stretch;
+        flex-wrap: wrap;
+      }
+      .ai-analyze-types {
+        display: inline-flex;
+        align-items: stretch;
+        /* 合并边框：相邻按钮 1px 重叠避免 2px 缝 */
+        margin: 0;
+        padding: 0;
+      }
+      /* 类型按钮继承通用 .action-btn 基础样式，仅覆盖分组视觉 */
       .ai-type-btn {
-        flex: 1;
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        gap: 4px;
-        padding: 10px 6px;
-        border-radius: 10px;
-        border: 1px solid var(--scanner-border);
-        background: var(--scanner-card);
-        color: var(--scanner-ink-2);
-        font-size: 12px;
+        /* 禁用旧竖排样式，保证水平布局 */
+        flex: 0 0 auto !important;
+        flex-direction: row !important;
+        height: 36px;           /* 统一 36px 命中高度（≥ 原 34px 竖卡） */
+        min-width: 100px;
+        font-size: 12.5px;       /* 原 12px → 提升 0.5px，更易读 */
         font-weight: 500;
-        cursor: pointer;
-        transition: all 0.2s;
+        padding: 0 12px;
+        gap: 6px;
+        border-radius: 8px;      /* 运维风统一圆角 */
       }
-      .ai-type-btn:hover {
-        border-color: var(--scanner-primary);
-        color: var(--scanner-primary);
-        background: var(--scanner-primary-bg);
-      }
+      /* 相邻按钮圆角合并（分组 Tab 效果，与端口扫描 action-btn 风格一致但更紧凑） */
+      .ai-type-btn-first { border-top-right-radius: 0; border-bottom-right-radius: 0; }
+      .ai-type-btn-mid   { border-radius: 0; margin-left: -1px; }
+      .ai-type-btn-last  { border-top-left-radius: 0; border-bottom-left-radius: 0; margin-left: -1px; }
+      /* active/primary 选中态：保持系统 primary 蓝色实心，边框稍亮 */
       .ai-type-btn.primary {
         border-color: var(--scanner-primary);
-        background: var(--scanner-primary);
-        color: #fff;
+        z-index: 1;            /* 选中态叠在相邻按钮上，避免被左侧按钮边框遮挡 */
       }
-      .ai-type-btn.primary:hover {
-        opacity: 0.9;
-      }
+      /* hover 时上浮一层，防止相邻边框切割 */
+      .ai-type-btn:hover { z-index: 2; position: relative; }
       .ai-type-btn:disabled {
         opacity: 0.5;
         cursor: not-allowed;
       }
-      .ai-config-link {
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        gap: 4px;
-        font-size: 11px;
-        color: var(--scanner-ink-3);
-        cursor: pointer;
-        padding: 4px;
-        transition: color 0.2s;
-      }
-      .ai-config-link:hover { color: var(--scanner-primary); }
 
-      /* AI 空状态 */
+      /* 配置按钮：ghost 描边样式，视觉次级但可点击区域 36px 高（原小文字 11px） */
+      .ai-config-btn {
+        height: 36px;
+        padding: 0 12px;
+        font-size: 12.5px;
+        border-radius: 8px;
+        border: 1px dashed var(--scanner-border);    /* 虚线：暗示"配置入口"，非主操作 */
+        background: var(--scanner-card);
+        color: var(--scanner-ink-2);
+        gap: 6px;
+        transition: all 0.2s;
+      }
+      .ai-config-btn:hover {
+        border-color: var(--scanner-primary);
+        border-style: solid;
+        color: var(--scanner-primary);
+        background: var(--scanner-primary-bg);
+      }
+
+      /* ---------- 空状态：左对齐标题 + 3 步引导 + 标签 ---------- */
       .ai-empty {
-        text-align: center;
-        padding: 28px 14px;
+        display: block;                      /* 原 flex 居中 → 改为块级，左对齐 */
+        text-align: left;
+        padding: 18px 16px;
+        border: 1px solid var(--scanner-border);
+        border-radius: 10px;
+        background: linear-gradient(180deg,
+          var(--scanner-muted) 0%,
+          var(--scanner-card)  100%);       /* 极淡上下渐变：底部略亮，非炫彩 */
+      }
+      .ai-empty-head {
+        display: flex;
+        align-items: flex-start;
+        gap: 12px;
+        margin-bottom: 14px;
+      }
+      .ai-empty-icon {
+        flex: 0 0 auto;
+        width: 40px; height: 40px;
+        border-radius: 10px;
+        background: var(--scanner-primary-bg);
+        color: var(--scanner-primary);
+        display: flex; align-items: center; justify-content: center;
+        border: 1px solid var(--scanner-border);
+      }
+      .ai-empty-icon svg { width: 20px; height: 20px; }
+      .ai-empty-title {
+        font-size: 13px;
+        font-weight: 600;
+        color: var(--scanner-ink);
+        margin-bottom: 3px;
+        line-height: 1.5;
+      }
+      .ai-empty-desc {
+        font-size: 12px;
+        color: var(--scanner-ink-2);
+        line-height: 1.7;
+      }
+      /* 3 步引导 */
+      .ai-empty-steps {
         display: flex;
         flex-direction: column;
-        align-items: center;
+        gap: 8px;
+        padding: 10px 12px;
+        border-radius: 8px;
+        background: var(--scanner-card);
+        border: 1px solid var(--scanner-border);
+        margin-bottom: 12px;
+      }
+      .ai-step {
+        display: flex;
+        align-items: flex-start;
         gap: 10px;
-      }
-      .ai-empty p {
         font-size: 12px;
-        color: var(--scanner-ink-3);
-        margin: 0;
+        line-height: 1.7;
+        color: var(--scanner-ink-2);
       }
+      .ai-step-no {
+        flex: 0 0 18px;
+        width: 18px; height: 18px;
+        margin-top: 1px;
+        border-radius: 50%;
+        background: var(--scanner-primary);
+        color: #fff;
+        font-size: 10.5px;
+        font-weight: 700;
+        display: flex; align-items: center; justify-content: center;
+      }
+      .ai-step-text { flex: 1; }
+      /* 标签栏（仍保留，但改为下方浅灰横向分隔感） */
       .ai-empty-tags {
         display: flex;
+        flex-wrap: wrap;
         gap: 6px;
       }
       .ai-tag {
-        font-size: 10px;
-        padding: 2px 8px;
-        border-radius: 10px;
-        background: var(--scanner-muted);
-        color: var(--scanner-ink-3);
+        font-size: 11px;
+        padding: 3px 10px;
+        border-radius: 6px;                       /* 圆角 6px（原 10px，更克制） */
+        background: var(--scanner-card);
+        color: var(--scanner-ink-2);
         border: 1px solid var(--scanner-border);
       }
 
-      /* AI 分析结果 */
+      /* ---------- AI 分析结果内容（Markdown） ---------- */
       .ai-analysis-content {
-        font-size: 12px;
-        line-height: 1.75;
+        font-size: 12.5px;                       /* 原 12px → +0.5px */
+        line-height: 1.8;                        /* 原 1.75 → 更宽松易读 */
         color: var(--scanner-ink);
-        padding: 14px 16px;
+        padding: 16px 18px;
         border-radius: 10px;
-        background: var(--scanner-muted);
+        background: var(--scanner-card);         /* 原 muted 灰底 → 白底/卡片底，减少压迫感 */
         border: 1px solid var(--scanner-border);
       }
       .ai-analysis-content h3 {
-        font-size: 13px;
+        font-size: 13.5px;                       /* 原 13px → +0.5px */
         font-weight: 700;
-        margin: 14px 0 6px 0;
+        margin: 16px 0 8px 0;
         color: var(--scanner-primary);
         display: flex;
         align-items: center;
@@ -943,85 +1204,94 @@ body {
       }
       .ai-analysis-content h3:first-child { margin-top: 0; }
       .ai-analysis-content ul, .ai-analysis-content ol {
-        padding-left: 18px;
-        margin: 6px 0;
+        padding-left: 20px;                      /* 原 18px → 对齐更整齐 */
+        margin: 8px 0;
       }
-      .ai-analysis-content li { margin-bottom: 3px; }
-      .ai-analysis-content p { margin: 6px 0; }
+      .ai-analysis-content li { margin-bottom: 4px; }
+      .ai-analysis-content p { margin: 8px 0; }
       .ai-analysis-content strong { color: var(--scanner-ink); font-weight: 700; }
       .ai-analysis-content code {
         font-family: var(--scanner-font-mono);
-        font-size: 11px;
-        padding: 1px 4px;
-        border-radius: 3px;
-        background: var(--scanner-border);
+        font-size: 11.5px;
+        padding: 1px 5px;
+        border-radius: 4px;
+        background: var(--scanner-muted);
+        color: var(--scanner-ink);
+        border: 1px solid var(--scanner-border);
       }
 
-      /* AI 加载状态 */
+      /* ---------- 加载状态（字号提升 + 去渐变） ---------- */
       .ai-loading {
         display: flex;
         flex-direction: column;
-        gap: 10px;
+        gap: 12px;                            /* 原 10px → 更透气 */
         padding: 18px 16px;
+        border: 1px solid var(--scanner-border);
+        border-radius: 10px;
+        background: var(--scanner-card);
       }
       .ai-loading-header {
         display: flex;
         align-items: center;
-        gap: 8px;
-        font-size: 13px;
+        gap: 10px;
+        font-size: 13.5px;                    /* 原 13px → +0.5px */
         font-weight: 600;
         color: var(--scanner-primary);
       }
       .ai-loading-header .dot {
-        width: 7px; height: 7px; border-radius: 50%;
+        width: 8px; height: 8px;               /* 原 7px → 略大 */
+        border-radius: 50%;
         background: var(--scanner-primary);
         animation: scanPulse 1s ease-in-out infinite;
       }
       .ai-loading-meta {
-        font-size: 10px;
-        color: var(--scanner-ink-3);
-        line-height: 1.6;
-        padding-left: 15px;
+        font-size: 12px;                       /* 原 10px → 提升 2px（核心痛点修复！） */
+        color: var(--scanner-ink-2);
+        line-height: 1.8;
+        padding: 0;
       }
       .ai-loading-bar {
-        height: 3px;
+        height: 4px;                           /* 原 3px → 加粗，更有进度感 */
         border-radius: 2px;
-        background: var(--scanner-border);
+        background: var(--scanner-muted);
+        border: 1px solid var(--scanner-border);
         overflow: hidden;
       }
       .ai-loading-bar-inner {
         height: 100%;
-        width: 40%;
+        width: 35%;
         border-radius: 2px;
-        background: linear-gradient(90deg, transparent, var(--scanner-primary), transparent);
+        background: var(--scanner-primary);    /* 去掉炫彩 linear-gradient（运维风克制） */
         animation: aiSlide 1.5s ease-in-out infinite;
       }
       @keyframes aiSlide {
-        0% { transform: translateX(-100%); }
-        100% { transform: translateX(350%); }
+        0%   { transform: translateX(-120%); }
+        100% { transform: translateX(320%); }
       }
 
-      /* AI 结果操作栏 */
+      /* ---------- 结果工具栏（复制/重新分析） ---------- */
       .ai-result-toolbar {
         display: flex;
         align-items: center;
         justify-content: space-between;
-        margin-bottom: 8px;
+        margin-bottom: 10px;                   /* 原 8px → 略大 */
+        padding: 0 2px;
       }
       .ai-result-label {
-        font-size: 11px;
-        color: var(--scanner-ink-3);
+        font-size: 12px;                       /* 原 11px → 提升 1px */
+        color: var(--scanner-ink-2);
         display: flex;
         align-items: center;
-        gap: 4px;
+        gap: 6px;                              /* 原 4px → 图标间距更宽松 */
       }
       .ai-result-actions {
         display: flex;
-        gap: 6px;
+        gap: 8px;                              /* 原 6px → 更易区分 */
       }
       .ai-result-btn {
-        font-size: 11px;
-        padding: 3px 10px;
+        font-size: 12px;                       /* 原 11px → 提升 1px */
+        padding: 6px 12px;                     /* 原 3px 10px → 增加命中区域 */
+        height: 30px;
         border-radius: 6px;
         border: 1px solid var(--scanner-border);
         background: var(--scanner-card);
@@ -1029,23 +1299,812 @@ body {
         cursor: pointer;
         display: flex;
         align-items: center;
-        gap: 4px;
+        gap: 5px;
         transition: all 0.2s;
       }
       .ai-result-btn:hover {
         border-color: var(--scanner-primary);
         color: var(--scanner-primary);
+        background: var(--scanner-primary-bg);
       }
 
-      /* AI 分析错误 */
+      /* ---------- 错误态 ---------- */
       .ai-analysis-error {
-        padding: 12px 14px;
-        font-size: 12px;
+        padding: 14px 16px;                    /* 原 12px 14px → 增加呼吸感 */
+        font-size: 12.5px;
         color: var(--scanner-state-error);
         background: var(--scanner-state-error-bg);
+        border: 1px solid var(--scanner-state-error);
         border-radius: 10px;
+        line-height: 1.8;
+      }
+
+      /* ---------- Markdown 表格样式（侧栏+全屏页共用） ---------- */
+      .md-table {
+        width: 100%;
+        border-collapse: collapse;
+        margin: 12px 0;
+        font-size: inherit;
+        background: var(--scanner-card);
+        border: 1px solid var(--scanner-border);
+        border-radius: 6px;
+        overflow: hidden;
+      }
+      .md-table th {
+        padding: 8px 12px;
+        background: var(--scanner-muted);
+        color: var(--scanner-ink);
+        font-weight: 600;
+        text-align: left;
+        border-bottom: 2px solid var(--scanner-border);
+        font-size: 0.95em;
+      }
+      .md-table td {
+        padding: 7px 12px;
+        border-bottom: 1px solid var(--scanner-border);
+        color: var(--scanner-ink-2);
+        font-size: 0.95em;
+      }
+      .md-table tr:last-child td {
+        border-bottom: none;
+      }
+      .md-table tr:hover td {
+        background: var(--scanner-primary-bg);
+      }
+
+      /* =========================================================
+         AI 独立全屏分析页面 —— 专业报告风格
+         ========================================================= */
+
+      .ai-full-page {
+        position: fixed;
+        inset: 0;
+        z-index: 9999;
+        display: flex;
+        flex-direction: column;
+        background: var(--scanner-bg);
+        color: var(--scanner-ink);
+      }
+
+      /* ---------- 顶部导航 ---------- */
+      .ai-full-header {
+        flex: 0 0 auto;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 10px 20px;
+        background: var(--scanner-card);
+        border-bottom: 1px solid var(--scanner-border);
+        height: 52px;
+      }
+      .ai-full-header-left {
+        display: flex;
+        align-items: center;
+        gap: 16px;
+      }
+      .ai-full-back {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 6px 12px;
+        border-radius: 6px;
+        border: 1px solid var(--scanner-border);
+        background: var(--scanner-bg);
+        color: var(--scanner-ink-2);
+        font-size: 12.5px;
+        font-weight: 500;
+        cursor: pointer;
+        transition: all 0.15s;
+      }
+      .ai-full-back:hover {
+        border-color: var(--scanner-primary);
+        color: var(--scanner-primary);
+        background: var(--scanner-primary-bg);
+      }
+      .ai-full-back svg { width: 14px; height: 14px; }
+      .ai-full-breadcrumb {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 13px;
+        color: var(--scanner-ink-3);
+      }
+      .ai-full-crumb { color: var(--scanner-ink-3); }
+      .ai-full-crumb-active { color: var(--scanner-ink); font-weight: 600; }
+      .ai-full-sep { color: var(--scanner-ink-3); opacity: 0.5; }
+      .ai-full-header-right {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+      .ai-full-type-switch {
+        display: inline-flex;
+        align-items: center;
+        padding: 3px;
+        border-radius: 8px;
+        border: 1px solid var(--scanner-border);
+        background: var(--scanner-card);
+      }
+      .ai-full-type-switch .ai-full-btn {
+        padding: 4px 10px !important;
+        font-size: 11.5px !important;
+        border: none !important;
+        background: transparent !important;
+        border-radius: 5px !important;
+      }
+      .ai-full-type-switch .ai-full-btn.primary {
+        background: var(--scanner-primary) !important;
+        color: #fff !important;
+      }
+      .ai-full-meta {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        padding: 5px 10px;
+        border-radius: 6px;
+        background: var(--scanner-muted);
+        color: var(--scanner-ink-2);
+        font-size: 12px;
+      }
+      .ai-full-meta svg { width: 12px; height: 12px; }
+      .ai-full-btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 6px 12px;
+        border-radius: 6px;
+        border: 1px solid var(--scanner-border);
+        background: var(--scanner-card);
+        color: var(--scanner-ink-2);
+        font-size: 12.5px;
+        font-weight: 500;
+        cursor: pointer;
+        transition: all 0.15s;
+      }
+      .ai-full-btn svg { width: 14px; height: 14px; }
+      .ai-full-btn:hover {
+        border-color: var(--scanner-primary);
+        color: var(--scanner-primary);
+        background: var(--scanner-primary-bg);
+      }
+      .ai-full-btn.primary {
+        background: var(--scanner-primary);
+        color: #fff;
+        border-color: var(--scanner-primary);
+      }
+      .ai-full-btn.primary:hover { opacity: 0.92; color: #fff; }
+      .ai-full-btn:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+        pointer-events: none;
+      }
+
+      /* ---------- 设备信息卡（固定在顶部） ---------- */
+      .ai-full-device-card {
+        flex: 0 0 auto;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 20px;
+        padding: 14px 20px;
+        background: var(--scanner-card);
+        border-bottom: 1px solid var(--scanner-border);
+      }
+      .ai-full-device-main {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        flex: 0 1 auto;
+        min-width: 0;
+      }
+      .ai-full-device-icon {
+        width: 48px; height: 48px;
+        border-radius: 10px;
+        background: var(--scanner-primary-bg);
+        color: var(--scanner-primary);
+        display: flex; align-items: center; justify-content: center;
+        border: 1px solid var(--scanner-border);
+        flex: 0 0 auto;
+      }
+      .ai-full-device-icon svg { width: 24px; height: 24px; }
+      .ai-full-device-info { min-width: 0; }
+      .ai-full-device-name {
+        font-size: 15px;
+        font-weight: 600;
+        color: var(--scanner-ink);
+        margin-bottom: 4px;
+      }
+      .ai-full-device-meta {
+        font-size: 12px;
+        color: var(--scanner-ink-2);
+        line-height: 1.5;
+      }
+      .ai-full-device-tags {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin-top: 6px;
+      }
+      .ai-full-device-stats {
+        display: flex;
+        gap: 14px;
+        flex: 0 0 auto;
+      }
+      .ai-full-stat {
+        min-width: 110px;
+        padding: 10px 14px;
+        border-radius: 8px;
+        background: var(--scanner-bg);
+        border: 1px solid var(--scanner-border);
+        text-align: left;
+      }
+      .ai-full-stat-label {
+        font-size: 11px;
+        color: var(--scanner-ink-3);
+        margin-bottom: 4px;
+      }
+      .ai-full-stat-value {
+        font-size: 18px;
+        font-weight: 700;
+        color: var(--scanner-ink);
+        line-height: 1.2;
+      }
+      .ai-full-stat-value.ai-risk-low     { color: var(--scanner-state-success); }
+      .ai-full-stat-value.ai-risk-medium  { color: var(--scanner-state-warn); }
+      .ai-full-stat-value.ai-risk-high    { color: var(--scanner-state-error); }
+      .ai-full-stat-value.ai-risk-critical{ color: #c0392b; }
+
+      /* ---------- 报告主体区 ---------- */
+      .ai-full-main {
+        flex: 1 1 auto;
+        overflow-y: auto;
+        padding: 24px 32px;
+      }
+      .ai-full-content {
+        max-width: 920px;
+        margin: 0 auto;
+      }
+
+      /* 加载状态（全屏版） */
+      .ai-full-loading {
+        padding: 40px 24px;
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+      }
+      .ai-full-loading-title {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        font-size: 16px;
+        font-weight: 600;
+        color: var(--scanner-primary);
+      }
+      .ai-full-loading-title .dot {
+        width: 10px; height: 10px;
+        border-radius: 50%;
+        background: var(--scanner-primary);
+        animation: scanPulse 1s ease-in-out infinite;
+      }
+      .ai-full-loading-meta {
+        font-size: 13px;
+        color: var(--scanner-ink-2);
+        line-height: 1.8;
+      }
+      .ai-full-loading-bar {
+        height: 4px;
+        border-radius: 2px;
+        background: var(--scanner-muted);
+        border: 1px solid var(--scanner-border);
+        overflow: hidden;
+      }
+      .ai-full-loading-bar-inner {
+        height: 100%;
+        width: 35%;
+        border-radius: 2px;
+        background: var(--scanner-primary);
+        animation: aiSlide 1.5s ease-in-out infinite;
+      }
+
+      /* 结果区域结构 */
+      .ai-full-result-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 16px;
+        padding-bottom: 12px;
+        border-bottom: 1px solid var(--scanner-border);
+      }
+      .ai-full-result-title {
+        font-size: 18px;
+        font-weight: 700;
+        color: var(--scanner-ink);
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .ai-full-result-title svg { width: 18px; height: 18px; color: var(--scanner-primary); }
+      .ai-full-risk-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 4px 12px;
+        border-radius: 12px;
+        font-size: 12px;
+        font-weight: 600;
+      }
+      .ai-full-risk-badge.low      { background: var(--scanner-state-success-bg); color: var(--scanner-state-success); }
+      .ai-full-risk-badge.medium   { background: var(--scanner-state-warn-bg);    color: var(--scanner-state-warn); }
+      .ai-full-risk-badge.high     { background: var(--scanner-state-error-bg);   color: var(--scanner-state-error); }
+      .ai-full-risk-badge.critical { background: #fde8e4; color: #c0392b; }
+
+      /* 结构化徽章 */
+      .ai-badges-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-bottom: 20px;
+      }
+      .ai-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        padding: 4px 10px;
+        border-radius: 4px;
+        font-size: 11.5px;
+        font-weight: 500;
+        background: var(--scanner-muted);
+        color: var(--scanner-ink-2);
+        border: 1px solid var(--scanner-border);
+      }
+      .ai-badge svg { width: 11px; height: 11px; }
+      .ai-badge.ai-badge-primary   { background: var(--scanner-primary-bg); color: var(--scanner-primary); border-color: transparent; }
+      .ai-badge.ai-badge-success   { background: var(--scanner-state-success-bg); color: var(--scanner-state-success); border-color: transparent; }
+      .ai-badge.ai-badge-warn      { background: var(--scanner-state-warn-bg);    color: var(--scanner-state-warn);    border-color: transparent; }
+      .ai-badge.ai-badge-error     { background: var(--scanner-state-error-bg);   color: var(--scanner-state-error);   border-color: transparent; }
+
+      /* 分析内容区（全文更宽松） */
+      .ai-full-content-body {
+        font-size: 14px;
+        line-height: 1.9;
+        color: var(--scanner-ink);
+        padding: 24px 28px;
+        border-radius: 12px;
+        background: var(--scanner-card);
+        border: 1px solid var(--scanner-border);
+      }
+      .ai-full-content-body h2 {
+        font-size: 16px;
+        font-weight: 700;
+        margin: 22px 0 10px 0;
+        padding-bottom: 6px;
+        border-bottom: 2px solid var(--scanner-primary);
+        color: var(--scanner-ink);
+      }
+      .ai-full-content-body h2:first-child { margin-top: 0; }
+      .ai-full-content-body h3 {
+        font-size: 15px;
+        font-weight: 700;
+        margin: 18px 0 8px 0;
+        color: var(--scanner-primary);
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .ai-full-content-body p { margin: 10px 0; }
+      .ai-full-content-body ul,
+      .ai-full-content-body ol {
+        padding-left: 24px;
+        margin: 10px 0;
+      }
+      .ai-full-content-body li { margin-bottom: 6px; }
+      .ai-full-content-body strong { color: var(--scanner-ink); font-weight: 700; }
+      .ai-full-content-body code {
+        font-family: var(--scanner-font-mono);
+        font-size: 12px;
+        padding: 2px 6px;
+        border-radius: 4px;
+        background: var(--scanner-muted);
+        color: var(--scanner-ink);
+        border: 1px solid var(--scanner-border);
+      }
+      .ai-full-content-body hr {
+        border: none;
+        border-top: 1px solid var(--scanner-border);
+        margin: 20px 0;
+      }
+
+      /* 结构化子模块卡片 */
+      .ai-module-card {
+        margin: 14px 0;
+        padding: 16px 18px;
+        border-radius: 10px;
+        background: var(--scanner-bg);
+        border: 1px solid var(--scanner-border);
+      }
+      .ai-module-title {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 14px;
+        font-weight: 600;
+        color: var(--scanner-ink);
+        margin-bottom: 10px;
+      }
+      .ai-module-title svg { width: 14px; height: 14px; color: var(--scanner-primary); }
+      .ai-module-body {
+        font-size: 13px;
+        line-height: 1.8;
+        color: var(--scanner-ink-2);
+      }
+      .ai-module-body ul,
+      .ai-module-body ol {
+        padding-left: 20px;
+        margin: 6px 0;
+      }
+      .ai-module-body li { margin-bottom: 5px; }
+
+      /* 攻击路径时间线 */
+      .ai-timeline {
+        list-style: none;
+        padding: 0;
+        margin: 14px 0;
+      }
+      .ai-timeline-item {
+        position: relative;
+        padding: 8px 0 8px 28px;
+        border-left: 2px solid var(--scanner-border);
+        margin-left: 8px;
+      }
+      .ai-timeline-item::before {
+        content: '';
+        position: absolute;
+        left: -7px;
+        top: 10px;
+        width: 12px; height: 12px;
+        border-radius: 50%;
+        background: var(--scanner-primary);
+        border: 2px solid var(--scanner-card);
+      }
+      .ai-timeline-step {
+        font-size: 13px;
+        font-weight: 600;
+        color: var(--scanner-ink);
+        margin-bottom: 3px;
+      }
+      .ai-timeline-desc {
+        font-size: 12px;
+        color: var(--scanner-ink-2);
         line-height: 1.7;
       }
+
+      /* 错误态（全屏版） */
+      .ai-full-error {
+        padding: 30px;
+        text-align: center;
+        color: var(--scanner-state-error);
+        background: var(--scanner-state-error-bg);
+        border: 1px solid var(--scanner-state-error);
+        border-radius: 10px;
+        line-height: 1.8;
+        font-size: 14px;
+      }
+
+      /* =========================================================
+         AI 全屏页 · 双栏专业布局 V2（覆盖层，优先级更高）
+         修复：背景变量；新增：左栏300px / 右栏flex；紧凑高密度
+         ========================================================= */
+      .ai-full-page {
+        background: var(--scanner-background) !important;
+      }
+      .ai-full-header {
+        padding: 8px 16px !important;
+        height: 46px !important;
+      }
+      .ai-full-back {
+        padding: 5px 10px !important;
+        background: var(--scanner-card) !important;
+        font-size: 12px !important;
+      }
+      .ai-full-back svg { width: 13px !important; height: 13px !important; }
+      .ai-full-breadcrumb { font-size: 12px !important; gap: 7px !important; }
+      .ai-full-btn {
+        padding: 5px 11px !important;
+        font-size: 12px !important;
+        border-radius: 6px !important;
+      }
+      .ai-full-btn svg { width: 13px !important; height: 13px !important; }
+      .ai-full-meta {
+        padding: 4px 9px !important;
+        font-size: 11.5px !important;
+      }
+      .ai-full-type-switch {
+        padding: 2px !important;
+        border-radius: 7px !important;
+      }
+      .ai-full-type-switch .ai-full-btn {
+        padding: 3px 9px !important;
+        font-size: 11px !important;
+      }
+
+      /* 布局：header 下是双栏容器 */
+      .ai-full-layout {
+        flex: 1 1 auto;
+        display: flex;
+        min-height: 0;
+        overflow: hidden;
+      }
+      /* 左栏：设备信息卡片堆叠 */
+      .ai-full-left {
+        flex: 0 0 300px;
+        width: 300px;
+        overflow-y: auto;
+        padding: 12px;
+        background: var(--scanner-card);
+        border-right: 1px solid var(--scanner-border);
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+      .ai-full-left-card {
+        background: var(--scanner-background);
+        border: 1px solid var(--scanner-border);
+        border-radius: 7px;
+        padding: 10px 11px;
+      }
+      .ai-full-left-card h4 {
+        margin: 0 0 7px 0;
+        font-size: 11px;
+        font-weight: 600;
+        color: var(--scanner-ink-3);
+        letter-spacing: 0.25px;
+        text-transform: uppercase;
+        display: flex;
+        align-items: center;
+        gap: 5px;
+      }
+      .ai-full-left-card h4 svg { width: 11px; height: 11px; }
+
+      /* 设备卡 - 左栏顶部 */
+      .ai-full-device-main {
+        align-items: flex-start !important;
+        gap: 10px !important;
+      }
+      .ai-full-device-icon {
+        width: 36px !important;
+        height: 36px !important;
+        border-radius: 7px !important;
+      }
+      .ai-full-device-icon svg { width: 17px !important; height: 17px !important; }
+      .ai-full-device-name {
+        font-size: 13px !important;
+        margin-bottom: 2px !important;
+      }
+      .ai-full-device-meta {
+        font-size: 11px !important;
+        word-break: break-all;
+      }
+      .ai-full-device-tags { gap: 4px !important; margin-top: 7px !important; }
+      .ai-full-device-stats {
+        display: grid !important;
+        grid-template-columns: 1fr 1fr !important;
+        gap: 5px !important;
+        margin-top: 10px;
+      }
+      .ai-full-stat {
+        min-width: 0 !important;
+        padding: 6px 7px !important;
+        border-radius: 5px !important;
+        background: var(--scanner-card) !important;
+      }
+      .ai-full-stat-label {
+        font-size: 9.5px !important;
+        white-space: nowrap;
+        margin-bottom: 1px !important;
+      }
+      .ai-full-stat-value {
+        font-size: 14.5px !important;
+      }
+
+      /* 旧的横向设备卡（单栏布局）隐藏 */
+      .ai-full-device-card {
+        display: none !important;
+      }
+
+      /* 左栏端口 */
+      .ai-full-port-list {
+        display: flex;
+        flex-direction: column;
+        gap: 3px;
+        max-height: 230px;
+        overflow-y: auto;
+      }
+      .ai-full-port-item {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 3px 6px;
+        background: var(--scanner-card);
+        border: 1px solid var(--scanner-border);
+        border-radius: 4px;
+        font-size: 11px;
+      }
+      .ai-full-port-num {
+        font-family: var(--scanner-font-mono);
+        font-weight: 600;
+        color: var(--scanner-state-success);
+        min-width: 34px;
+      }
+      .ai-full-port-svc {
+        color: var(--scanner-ink);
+        flex: 1;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .ai-full-port-risk {
+        font-size: 9px;
+        padding: 1px 5px;
+        border-radius: 999px;
+        font-weight: 600;
+      }
+      .ai-full-port-risk.high { background: var(--scanner-state-error-bg); color: var(--scanner-state-error); }
+      .ai-full-port-risk.med  { background: var(--scanner-state-warning-bg); color: var(--scanner-state-warning); }
+      .ai-full-port-empty {
+        text-align: center;
+        padding: 10px 4px;
+        font-size: 11px;
+        color: var(--scanner-ink-3);
+      }
+
+      /* 左栏告警 */
+      .ai-full-alert-list {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        max-height: 170px;
+        overflow-y: auto;
+      }
+      .ai-full-alert-item {
+        padding: 4px 6px;
+        border-radius: 5px;
+        border-left: 3px solid var(--scanner-state-error);
+        background: var(--scanner-state-error-bg);
+        font-size: 11px;
+        color: var(--scanner-ink);
+        line-height: 1.4;
+      }
+      .ai-full-alert-item.warn {
+        border-left-color: var(--scanner-state-warning);
+        background: var(--scanner-state-warning-bg);
+      }
+      .ai-full-alert-title { font-weight: 600; margin-bottom: 1px; }
+      .ai-full-alert-desc { color: var(--scanner-ink-2); font-size: 10px; }
+      .ai-full-alert-empty {
+        text-align: center;
+        padding: 10px 4px;
+        font-size: 11px;
+        color: var(--scanner-ink-3);
+      }
+
+      /* 左栏快捷操作 */
+      .ai-full-quick-actions {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+      }
+      .ai-full-quick-btn {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 5px 8px;
+        border-radius: 5px;
+        border: 1px solid var(--scanner-border);
+        background: var(--scanner-card);
+        color: var(--scanner-ink-2);
+        font-size: 11.5px;
+        font-weight: 500;
+        cursor: pointer;
+        transition: all 0.15s;
+      }
+      .ai-full-quick-btn:hover {
+        border-color: var(--scanner-primary);
+        color: var(--scanner-primary);
+        background: var(--scanner-primary-bg);
+      }
+      .ai-full-quick-btn svg { width: 11.5px; height: 11.5px; }
+      .ai-full-quick-btn.primary {
+        background: var(--scanner-primary);
+        color: #fff;
+        border-color: transparent;
+      }
+      .ai-full-quick-btn.primary:hover { background: var(--scanner-primary); color: #fff; opacity: 0.92; }
+
+      /* 右栏：报告主体 */
+      .ai-full-right {
+        flex: 1 1 auto;
+        min-width: 0;
+        overflow-y: auto;
+        padding: 16px 26px;
+      }
+      .ai-full-right-inner {
+        max-width: 960px;
+        margin: 0 auto;
+      }
+
+      /* 旧 main 隐藏，避免双布局冲突 */
+      .ai-full-main { display: none !important; }
+
+      /* 报告主体高密度 */
+      .ai-full-result-header { margin-bottom: 12px !important; padding-bottom: 9px !important; }
+      .ai-full-result-title { font-size: 16px !important; gap: 6px !important; }
+      .ai-full-result-title svg { width: 16px !important; height: 16px !important; }
+      .ai-full-risk-badge { padding: 2.5px 9px !important; font-size: 11px !important; }
+      .ai-badges-row { gap: 6px !important; margin-bottom: 14px !important; }
+      .ai-badge { padding: 2.5px 8px !important; font-size: 10.5px !important; }
+
+      .ai-full-content-body {
+        font-size: 12.5px !important;
+        line-height: 1.8 !important;
+        padding: 16px 19px !important;
+        border-radius: 7px !important;
+      }
+      .ai-full-content-body h2 {
+        font-size: 14.5px !important;
+        margin: 16px 0 7px 0 !important;
+      }
+      .ai-full-content-body h3 {
+        font-size: 13.5px !important;
+        margin: 13px 0 5px 0 !important;
+      }
+      .ai-full-content-body h4 {
+        font-size: 12.5px;
+        font-weight: 600;
+        margin: 10px 0 4px 0;
+        color: var(--scanner-ink);
+      }
+      .ai-full-content-body p { margin: 7px 0 !important; }
+      .ai-full-content-body ul,
+      .ai-full-content-body ol {
+        padding-left: 20px !important;
+        margin: 7px 0 !important;
+      }
+      .ai-full-content-body li { margin-bottom: 4px !important; }
+      .ai-full-content-body code { font-size: 11px !important; }
+
+      .ai-module-card {
+        margin: 10px 0 !important;
+        padding: 12px 14px !important;
+        border-radius: 7px !important;
+        background: var(--scanner-background) !important;
+      }
+      .ai-module-title {
+        font-size: 13px !important;
+        margin-bottom: 7px !important;
+        gap: 6px !important;
+      }
+      .ai-module-title svg { width: 12px !important; height: 12px !important; }
+      .ai-module-body { font-size: 12px !important; }
+
+      .ai-timeline { margin: 10px 0 !important; }
+      .ai-timeline-item {
+        padding: 5px 0 5px 22px !important;
+        margin-left: 6px !important;
+      }
+      .ai-timeline-item::before {
+        left: -5.5px !important; top: 8px !important;
+        width: 9px !important; height: 9px !important;
+      }
+      .ai-timeline-step { font-size: 12px !important; }
+      .ai-timeline-desc { font-size: 11px !important; }
+
+      .ai-full-loading { padding: 30px 20px !important; gap: 12px !important; }
+      .ai-full-loading-title { font-size: 14.5px !important; gap: 7px !important; }
+      .ai-full-loading-title .dot { width: 8px !important; height: 8px !important; }
+      .ai-full-loading-meta { font-size: 12px !important; }
+
+      .ai-full-error { padding: 20px !important; font-size: 12.5px !important; border-radius: 7px !important; }
     </style>
 </head>
 <body class="min-h-screen font-sans antialiased">
@@ -1529,35 +2588,61 @@ body {
             <i data-lucide="chevron-down" class="action-panel-toggle"></i>
           </div>
           <div class="action-panel-body">
-            <!-- 分析类型选择 -->
+            <!-- 操作区（与 Ping/端口扫描面板统一：action-btn 横排 + hint 说明） -->
             <div id="ai-analyze-section">
-              <div class="ai-analyze-types">
-                <button class="ai-type-btn" data-type="profile">
-                  <i data-lucide="user-search" style="width:16px;height:16px;"></i>
-                  <span>用户画像</span>
-                </button>
-                <button class="ai-type-btn" data-type="security">
-                  <i data-lucide="shield-alert" style="width:16px;height:16px;"></i>
-                  <span>安全风险</span>
-                </button>
-                <button class="ai-type-btn primary" data-type="full">
-                  <i data-lucide="brain" style="width:16px;height:16px;"></i>
-                  <span>综合分析</span>
+              <div class="action-panel-actions ai-action-row">
+                <!-- 分析类型分组（保留 .ai-type-btn 类名，JS 仍可用 querySelectorAll 命中） -->
+                <div class="ai-analyze-types" role="group" aria-label="分析类型">
+                  <button type="button" class="action-btn ai-type-btn ai-type-btn-first" data-type="profile">
+                    <i data-lucide="user-search"></i> 用户画像<span class="ai-kbd">Alt+1</span>
+                  </button>
+                  <button type="button" class="action-btn ai-type-btn ai-type-btn-mid" data-type="security">
+                    <i data-lucide="shield-alert"></i> 安全风险<span class="ai-kbd">Alt+2</span>
+                  </button>
+                  <button type="button" class="action-btn ai-type-btn primary ai-type-btn-last" data-type="full">
+                    <i data-lucide="brain"></i> 综合分析<span class="ai-kbd">Alt+3</span>
+                  </button>
+                </div>
+                <!-- 配置 AI 模型入口（保留 id=ai-config-link，JS click 绑定保持；样式升级为 action-btn ghost：可见度+点击区提升） -->
+                <button type="button" class="action-btn ghost ai-config-btn" id="ai-config-link">
+                  <i data-lucide="settings"></i> 配置 AI 模型
                 </button>
               </div>
-              <div class="ai-config-link" id="ai-config-link">
-                <i data-lucide="settings" style="width:12px;height:12px;"></i>
-                <span>配置 AI 模型</span>
+              <!-- 说明（与 Ping/端口面板的 action-panel-hint 同一视觉） -->
+              <div class="action-panel-hint">
+                基于设备类型、开放端口、厂商 OUI、安全告警等上下文，AI 自动生成使用者画像、风险清单与加固建议（报告支持一键复制）。
               </div>
             </div>
-            <!-- 结果区 -->
+            <!-- 结果区（保留 id/class 完全不变，JS innerHTML / querySelector 全兼容） -->
             <div id="ai-result">
               <div class="ai-empty">
-                <i data-lucide="sparkles" style="width:28px;height:28px;color:var(--scanner-ink-3);"></i>
-                <p>选择分析类型，AI 将生成该设备的智能分析报告</p>
+                <div class="ai-empty-head">
+                  <div class="ai-empty-icon">
+                    <i data-lucide="sparkles"></i>
+                  </div>
+                  <div class="ai-empty-text">
+                    <div class="ai-empty-title">选择类型，开始智能分析</div>
+                    <div class="ai-empty-desc">点击上方「用户画像 / 安全风险 / 综合分析」按钮，AI 将针对当前选中设备输出专属分析报告</div>
+                  </div>
+                </div>
+                <div class="ai-empty-steps">
+                  <div class="ai-step">
+                    <span class="ai-step-no">1</span>
+                    <span class="ai-step-text">在侧栏「设备列表」选择目标设备（未选会提示）</span>
+                  </div>
+                  <div class="ai-step">
+                    <span class="ai-step-no">2</span>
+                    <span class="ai-step-text">点击上方按钮选择分析类型，等待模型响应（实时显示耗时）</span>
+                  </div>
+                  <div class="ai-step">
+                    <span class="ai-step-no">3</span>
+                    <span class="ai-step-text">查看报告，可使用右上角「复制」「重新分析」操作</span>
+                  </div>
+                </div>
                 <div class="ai-empty-tags">
-                  <span class="ai-tag">用户画像</span>
-                  <span class="ai-tag">安全风险</span>
+                  <span class="ai-tag">使用者画像</span>
+                  <span class="ai-tag">开放端口</span>
+                  <span class="ai-tag">高危服务</span>
                   <span class="ai-tag">加固建议</span>
                 </div>
               </div>
@@ -1608,6 +2693,174 @@ body {
         </div>
         <div id="monitor-chart" class="monitor-float-chart"></div>
       </div>
+    </div>
+
+    <!-- 独立全屏 AI 分析页面（从侧栏「展开全屏查看」进入） -->
+    <div id="ai-full-page" class="ai-full-page" style="display:none;">
+      <!-- 顶部导航：返回 + 面包屑 + 操作 -->
+      <header class="ai-full-header">
+        <div class="ai-full-header-left">
+          <button id="ai-full-back" class="ai-full-back" type="button">
+            <i data-lucide="arrow-left"></i>
+            <span>返回</span>
+          </button>
+          <div class="ai-full-breadcrumb">
+            <span class="ai-full-crumb">网络扫描</span>
+            <span class="ai-full-sep">/</span>
+            <span class="ai-full-crumb">设备详情</span>
+            <span class="ai-full-sep">/</span>
+            <span class="ai-full-crumb ai-full-crumb-active">AI 智能分析报告</span>
+          </div>
+        </div>
+        <div class="ai-full-header-right">
+          <div class="ai-full-type-switch" role="group" aria-label="AI 分析类型">
+            <button id="ai-full-type-profile" class="ai-full-btn" type="button" data-type="profile">
+              <i data-lucide="user-search"></i> 画像<span class="ai-kbd">Alt+1</span>
+            </button>
+            <button id="ai-full-type-security" class="ai-full-btn" type="button" data-type="security">
+              <i data-lucide="shield-alert"></i> 风险<span class="ai-kbd">Alt+2</span>
+            </button>
+            <button id="ai-full-type-full" class="ai-full-btn primary" type="button" data-type="full">
+              <i data-lucide="brain"></i> 综合<span class="ai-kbd">Alt+3</span>
+            </button>
+          </div>
+          <span class="ai-full-meta" id="ai-full-meta">
+            <i data-lucide="clock"></i>
+            <span id="ai-full-time">-</span>
+          </span>
+          <button id="ai-full-regen" class="ai-full-btn" type="button">
+            <i data-lucide="refresh-cw"></i>
+            <span>重新分析</span>
+          </button>
+          <button id="ai-full-copy" class="ai-full-btn primary" type="button">
+            <i data-lucide="copy"></i>
+            <span>复制报告</span>
+          </button>
+        </div>
+      </header>
+
+      <!-- 双栏布局：左栏设备上下文 + 右栏AI报告主体 -->
+      <div class="ai-full-layout">
+        <!-- 左栏：300px 固定，分块卡片堆叠 -->
+        <aside class="ai-full-left">
+          <!-- 卡片1：设备基本信息 + 统计（将原顶部横向卡改为左栏纵向卡） -->
+          <div class="ai-full-left-card">
+            <h4><i data-lucide="cpu"></i> 设备概览</h4>
+            <div class="ai-full-device-main">
+              <div class="ai-full-device-icon" id="ai-full-device-icon-v2"><i data-lucide="server"></i></div>
+              <div class="ai-full-device-info">
+                <div class="ai-full-device-name" id="ai-full-device-name-v2">未选择设备</div>
+                <div class="ai-full-device-meta" id="ai-full-device-meta-v2">IP · MAC · 厂商</div>
+                <div class="ai-full-device-tags" id="ai-full-device-tags-v2"></div>
+              </div>
+            </div>
+            <div class="ai-full-device-stats" id="ai-full-device-stats-v2">
+              <div class="ai-full-stat">
+                <div class="ai-full-stat-label">开放端口</div>
+                <div class="ai-full-stat-value" id="ai-full-stat-ports-v2">-</div>
+              </div>
+              <div class="ai-full-stat">
+                <div class="ai-full-stat-label">安全告警</div>
+                <div class="ai-full-stat-value" id="ai-full-stat-alerts-v2">-</div>
+              </div>
+              <div class="ai-full-stat">
+                <div class="ai-full-stat-label">所属网段</div>
+                <div class="ai-full-stat-value" id="ai-full-stat-cidr-v2">-</div>
+              </div>
+              <div class="ai-full-stat">
+                <div class="ai-full-stat-label">AI 风险</div>
+                <div class="ai-full-stat-value" id="ai-full-stat-risk-v2">-</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 卡片2：端口列表 -->
+          <div class="ai-full-left-card">
+            <h4><i data-lucide="plug"></i> 开放端口 & 服务</h4>
+            <div id="ai-full-port-list" class="ai-full-port-list">
+              <div class="ai-full-port-empty">暂无端口数据</div>
+            </div>
+          </div>
+
+          <!-- 卡片3：关联告警 -->
+          <div class="ai-full-left-card">
+            <h4><i data-lucide="shield-alert"></i> 关联安全告警</h4>
+            <div id="ai-full-alert-list" class="ai-full-alert-list">
+              <div class="ai-full-alert-empty">该设备暂未发现告警</div>
+            </div>
+          </div>
+
+          <!-- 卡片4：快捷操作 -->
+          <div class="ai-full-left-card">
+            <h4><i data-lucide="zap"></i> 快捷操作</h4>
+            <div class="ai-full-quick-actions">
+              <button type="button" class="ai-full-quick-btn primary" id="ai-full-q-ping">
+                <i data-lucide="radio"></i> Ping 连通性测试
+              </button>
+              <button type="button" class="ai-full-quick-btn" id="ai-full-q-ports">
+                <i data-lucide="scan-line"></i> 全端口扫描 (1-1024)
+              </button>
+              <button type="button" class="ai-full-quick-btn" id="ai-full-q-vendor">
+                <i data-lucide="fingerprint"></i> 重新识别设备厂商
+              </button>
+              <button type="button" class="ai-full-quick-btn" id="ai-full-q-copy-ip">
+                <i data-lucide="copy"></i> 复制 IP 地址
+              </button>
+              <button type="button" class="ai-full-quick-btn" id="ai-full-q-close-detail">
+                <i data-lucide="eye"></i> 返回设备详情
+              </button>
+            </div>
+          </div>
+        </aside>
+
+        <!-- 右栏：AI 报告主体 -->
+        <section class="ai-full-right">
+          <div class="ai-full-right-inner">
+            <div id="ai-full-content-v2">
+              <!-- 内容由 JS 动态渲染（加载中 / 结果 / 错误） -->
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <!-- 旧单栏布局（保留，CSS设 display:none 兜底） -->
+      <section class="ai-full-device-card" id="ai-full-device-card" aria-hidden="true" tabindex="-1">
+        <div class="ai-full-device-main">
+          <div class="ai-full-device-icon" id="ai-full-device-icon">
+            <i data-lucide="router"></i>
+          </div>
+          <div class="ai-full-device-info">
+            <div class="ai-full-device-name" id="ai-full-device-name">未选择设备</div>
+            <div class="ai-full-device-meta" id="ai-full-device-meta">IP · MAC · 厂商</div>
+            <div class="ai-full-device-tags" id="ai-full-device-tags"></div>
+          </div>
+        </div>
+        <div class="ai-full-device-stats" id="ai-full-device-stats">
+          <div class="ai-full-stat">
+            <div class="ai-full-stat-label">开放端口</div>
+            <div class="ai-full-stat-value" id="ai-full-stat-ports">-</div>
+          </div>
+          <div class="ai-full-stat">
+            <div class="ai-full-stat-label">安全告警</div>
+            <div class="ai-full-stat-value" id="ai-full-stat-alerts">-</div>
+          </div>
+          <div class="ai-full-stat">
+            <div class="ai-full-stat-label">所属网段</div>
+            <div class="ai-full-stat-value" id="ai-full-stat-cidr">-</div>
+          </div>
+          <div class="ai-full-stat">
+            <div class="ai-full-stat-label">AI 评估风险</div>
+            <div class="ai-full-stat-value" id="ai-full-stat-risk">-</div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 报告主体：可滚动，包含结果/加载/错误 -->
+      <main class="ai-full-main">
+        <div id="ai-full-content" class="ai-full-content">
+          <!-- 内容由 JS 动态渲染（加载中 / 结果 / 错误） -->
+        </div>
+      </main>
     </div>
 
     <!-- AI 配置弹窗 -->
