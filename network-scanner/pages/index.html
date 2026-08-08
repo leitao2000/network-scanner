@@ -623,7 +623,7 @@ body {
 
       /* 详情抽屉操作面板 */
       .drawer-panel {
-        width: 460px;
+        width: 540px;
       }
       .action-panel {
         margin: 12px 16px;
@@ -657,10 +657,11 @@ body {
       }
       .action-panel.collapsed .action-panel-toggle { transform: rotate(-90deg); }
       .action-panel-body {
-        padding: 12px 25px;
+        padding: 12px 18px;
         display: flex;
         flex-direction: column;
         gap: 10px;
+        box-sizing: border-box;
       }
       .action-panel.collapsed .action-panel-body { display: none; }
       .action-panel-actions {
@@ -1056,7 +1057,6 @@ body {
 
       /* ---------- 操作区：类型按钮组 + 配置按钮 ---------- */
       .action-panel-body {
-        /* 防止子元素撑宽后溢出面板圆角/阴影外，同时保证 box-sizing */
         overflow-x: clip;
         box-sizing: border-box;
       }
@@ -1064,73 +1064,73 @@ body {
         display: flex;
         width: 100%;
         box-sizing: border-box;
-        min-width: 0;                      /* Flex 父宽度约束 */
-        column-gap: 12px;                  /* 同一行：左按钮组与右配置按钮之间间隔 */
-        row-gap: 12px;                     /* 空间不足换行：行间垂直间隔 */
-        justify-content: space-between;    /* 够宽时：两端对齐（专业运维风）；换行后：各自占行、配置按钮靠右 */
+        min-width: 0;
+        column-gap: 8px;
+        row-gap: 8px;
+        justify-content: space-between;
         align-items: center;
-        flex-wrap: wrap;                   /* 放不下就换行，绝不溢出或挤压按钮变形 */
+        flex-wrap: wrap;
       }
       .ai-analyze-types {
         display: inline-flex;
         align-items: stretch;
-        /* 合并边框：相邻按钮 1px 重叠避免 2px 缝 */
         margin: 0;
         padding: 0;
-        /* 重要：按钮组保持自然内容宽度，不拉伸均分、不压缩变形 */
-        flex: 0 0 auto;
+        /* 占满第一行剩余空间，三按钮内部 flex:1 均分 */
+        flex: 1 1 auto;
+        min-width: 0;
       }
-      /* 类型按钮：还原原「按内容自适应」美感，字体/padding 稍加大让它更饱满、专业 */
+      /* 类型按钮：空间足够时均分一行，不够时按比例收缩不换行 */
       .ai-type-btn {
-        flex: 0 0 auto !important;         /* 死也不拉伸变形，保持内容尺寸 */
-        min-width: 0;                      /* 但允许父 flex-wrap 自然换行 */
+        flex: 1 1 0%;
+        min-width: 0;
         flex-direction: row !important;
-        height: 38px;                      /* 36→38，更饱满 */
-        font-size: 13px;                   /* 12.5→13，更易读、高级感 */
+        height: 38px;
+        font-size: 12.5px;
         font-weight: 600;
-        padding: 0 14px;                   /* 12→14，呼吸感 */
-        gap: 6px;
-        border-radius: 9px;                /* 圆角略增，整体风格更精致 */
+        padding: 0 12px;
+        gap: 5px;
+        border-radius: 9px;
         white-space: nowrap;
-        overflow: visible;                 /* 图标/文字绝不被裁 */
+        overflow: visible;
       }
       /* 相邻按钮圆角合并（分组 Tab 效果） */
       .ai-type-btn-first { border-top-right-radius: 0; border-bottom-right-radius: 0; }
       .ai-type-btn-mid   { border-radius: 0; margin-left: -1px; }
       .ai-type-btn-last  { border-top-left-radius: 0; border-bottom-left-radius: 0; margin-left: -1px; }
-      /* active/primary 选中态：保持系统 primary 蓝色实心，边框稍亮 */
+      /* active/primary 选中态 */
       .ai-type-btn.primary {
         border-color: var(--scanner-primary);
-        z-index: 1;            /* 选中态叠在相邻按钮上，避免被左侧按钮边框遮挡 */
+        z-index: 1;
       }
-      /* hover 时上浮一层，防止相邻边框切割 */
       .ai-type-btn:hover { z-index: 2; position: relative; }
       .ai-type-btn:disabled {
         opacity: 0.5;
         cursor: not-allowed;
       }
-      /* Alt 快捷键 kbd：恢复原尺寸，并让它更具专业运维风（略亮底+细边框） */
+      /* Alt 快捷键 kbd */
       .ai-type-btn .ai-kbd {
-        margin-left: 7px;
-        padding: 2px 6px;
+        margin-left: 5px;
+        padding: 1px 5px;
         font-size: 10px;
         line-height: 1;
+        white-space: nowrap;
       }
 
-      /* 配置按钮：ghost 描边样式，空间不足时自动换行到第二行，保持右对齐 */
+      /* 配置按钮：保持自然宽度，空间不够时换行至第二行右对齐 */
       .ai-config-btn {
         height: 38px;
-        padding: 0 14px;
-        font-size: 13px;
+        padding: 0 12px;
+        font-size: 12.5px;
         font-weight: 600;
         border-radius: 9px;
-        border: 1px dashed var(--scanner-border);    /* 虚线：暗示"配置入口"，非主操作 */
+        border: 1px dashed var(--scanner-border);
         background: var(--scanner-card);
         color: var(--scanner-ink-2);
         display: inline-flex;
         align-items: center;
-        gap: 7px;
-        flex: 0 0 auto;                   /* 不参与均分，按实际内容宽度 */
+        gap: 6px;
+        flex: 0 0 auto;
         transition: all 0.2s ease;
       }
       .ai-config-btn:hover {
