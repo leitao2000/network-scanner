@@ -2065,6 +2065,260 @@
     return html;
   }
 
+  // 构建 AI 分析的 prompt
+  function buildAiPrompt(device, scanContext) {
+    const svcs = (device.services || []).map(s => {
+      const port = typeof s === 'object' ? s.port : s;
+      const name = typeof s === 'object' ? s.name : (PORT_SERVICES[port] || '未知');
+      const risk = typeof s === 'object' ? s.risk : 'low';
+      const desc = typeof s === 'object' ? (s.desc || '') : (PORT_DESCRIPTIONS[port] || '');
+      return `  - 端口 ${port} (${name})，风险等级: ${risk === 'high' ? '高危' : risk === 'medium' ? '中危' : '低危'}${desc ? '，' + desc : ''}`;
+    }).join('\n') || '  - 无开放端口';
+
+    const alerts = (scanContext?.alerts || []).map(a => `  - [${a.level === 'high' ? '高危' : '中危'}] ${a.title}: ${a.detail || ''}`).join('\n') || '  - 无告警';
+
+    return `你是一位资深网络安全分析师。请根据以下局域网扫描设备信息，从"用户画像"和"安全风险"两个维度进行分析。
+
+## 设备信息
+- IP 地址: ${device.ip}
+- MAC 地址: ${device.mac || '未知'}
+- 主机名: ${device.hostname || '未知'}
+- 设备类型/分类: ${device.type || '未知'} / ${device.category || 'unknown'}
+- 网络状态: ${device.status || '未知'}，延迟 ${device.latency != null ? device.latency + 'ms' : '未知'}，探测方式 ${device.method || '未知'}
+- 所属网段: ${scanContext?.cidr || '未知'}
+- 本机 IP: ${localInfo?.ip || '未知'}，网关: ${localInfo?.gateway || '未知'}
+
+## 开放端口
+${svcs}
+
+## 安全告警
+${alerts}
+
+## 输出要求
+请用中文，按以下 Markdown 格式输出（不要输出其他内容）：
+
+### 用户画像
+推测该设备的使用者身份、用途场景、技术水平等。
+
+### 安全风险
+列出风险点并给出风险等级（高/中/低），包括端口暴露、协议安全、权限风险等。
+
+### 建议措施
+给出 3-5 条具体可操作的安全加固建议。`;
+  }
+
+  // 多字段兼容解析：适配各种 OpenAI 兼容中间件（OneAPI/NewAPI/国内代理等）
+  function extractChoiceText(json) {
+    if (!json) return null;
+    if (json.type === 'content_block_delta' && json.delta?.text) return json.delta.text;
+    if (json.type === 'message_start' && json.message?.content?.[0]?.text) return json.message.content[0].text;
+    if (json.type === 'message_delta' && json.delta?.text) return json.delta.text;
+    if (Array.isArray(json.content)) {
+      const texts = json.content.filter(c => c && c.type === 'text' && c.text).map(c => c.text);
+      if (texts.length) return texts.join('');
+    }
+    if (typeof json.content === 'string' && json.content) return json.content;
+    const ch0 = json.choices && json.choices[0];
+    if (ch0) {
+      if (typeof ch0.delta?.content === 'string' && ch0.delta.content) return ch0.delta.content;
+      if (typeof ch0.message?.content === 'string' && ch0.message.content) return ch0.message.content;
+      if (typeof ch0.text === 'string' && ch0.text) return ch0.text;
+      if (typeof ch0.content === 'string' && ch0.content) return ch0.content;
+    }
+    if (typeof json.text === 'string' && json.text) return json.text;
+    if (typeof json.output === 'string' && json.output) return json.output;
+    if (typeof json.answer === 'string' && json.answer) return json.answer;
+    if (typeof json.result === 'string' && json.result) return json.result;
+    return null;
+  }
+
+  // 浏览器模式：直接用 fetch 调用 AI API（支持流式 + Abort 超时 + 非流式回退）
+  async function fetchAiAnalysis(cfg, device, scanContext, onChunk, timeoutMs = 60000) {
+    const prompt = buildAiPrompt(device, scanContext);
+    const isAnthropic = cfg.baseUrl.toLowerCase().includes('anthropic');
+    const anthBase = cfg.baseUrl.replace(/\/+$/, '');
+    const url = isAnthropic
+      ? anthBase + (anthBase.includes('/v1') ? '/messages' : '/v1/messages')
+      : anthBase + '/chat/completions';
+
+    let body, headers;
+    if (isAnthropic) {
+      body = JSON.stringify({
+        model: cfg.model,
+        system: '你是一位专业的网络安全分析师，擅长分析局域网设备的安全风险。请使用中文回答，输出 Markdown 格式。',
+        messages: [{ role: 'user', content: prompt }],
+        max_tokens: Math.min(cfg.maxTokens || 2000, 4096),
+        stream: true
+      });
+      headers = {
+        'Content-Type': 'application/json',
+        'x-api-key': cfg.apiKey,
+        'anthropic-version': '2023-06-01'
+      };
+    } else {
+      body = JSON.stringify({
+        model: cfg.model,
+        messages: [
+          { role: 'system', content: '你是一位专业的网络安全分析师，擅长分析局域网设备的安全风险。请使用中文回答，输出 Markdown 格式。' },
+          { role: 'user', content: prompt }
+        ],
+        max_tokens: cfg.maxTokens || 2000,
+        temperature: cfg.temperature || 0.7,
+        stream: true
+      });
+      headers = {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${cfg.apiKey}`
+      };
+    }
+
+    const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    const timer = setTimeout(() => controller && controller.abort(), timeoutMs);
+    const signal = controller ? controller.signal : undefined;
+
+    try {
+      const res = await fetch(url, { method: 'POST', headers, body, signal });
+      clearTimeout(timer);
+      if (!res.ok) {
+        const errText = await res.text();
+        let msg = `HTTP ${res.status}`;
+        try {
+          const j = JSON.parse(errText);
+          if (j.error?.message) msg += ': ' + j.error.message;
+          else if (j.message) msg += ': ' + j.message;
+        } catch (_) {
+          if (errText) msg += ': ' + errText.slice(0, 200);
+        }
+        return { success: false, error: msg };
+      }
+      if (!res.body || typeof res.body.getReader !== 'function') {
+        const text = await res.text();
+        try {
+          const j = JSON.parse(text);
+          const content = extractChoiceText(j);
+          if (content) return { success: true, content };
+        } catch (_) { /* not JSON */ }
+        return { success: false, error: '服务器未返回可读内容（长度 ' + text.length + '）' };
+      }
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let fullText = '';
+      let streamEmpty = true;
+      let rawBody = '';
+      let buffer = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        const str = decoder.decode(value, { stream: true });
+        rawBody += str;
+        buffer += str;
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed || trimmed.startsWith(': ')) continue;
+          if (!trimmed.startsWith('data: ')) continue;
+          const data = trimmed.slice(6);
+          if (data === '[DONE]') continue;
+          try {
+            const json = JSON.parse(data);
+            const delta = extractChoiceText(json);
+            if (delta) {
+              streamEmpty = false;
+              fullText += delta;
+              if (onChunk) onChunk(delta);
+            }
+          } catch (e) { /* skip invalid JSON */ }
+        }
+      }
+
+      // 如果流式解析不出内容，尝试把全部响应拼接/整体解析
+      if (streamEmpty && rawBody.trim()) {
+        try {
+          let cleaned = rawBody;
+          if (cleaned.includes('data: ')) {
+            cleaned = cleaned
+              .split('\n')
+              .map(l => l.trim())
+              .filter(l => l.startsWith('data: ') && l.slice(6) !== '[DONE]')
+              .map(l => l.slice(6))
+              .join('');
+          }
+          if (cleaned) {
+            const j = JSON.parse(cleaned);
+            const txt = extractChoiceText(j);
+            if (txt) fullText = txt;
+          }
+          if (!fullText) {
+            try {
+              const rawJ = JSON.parse(rawBody);
+              const txt = extractChoiceText(rawJ);
+              if (txt) fullText = txt;
+            } catch (_) { /* not JSON */ }
+          }
+        } catch (_) { /* ignore */ }
+      }
+
+      // 终极 fallback：再次非流式请求（关闭 stream）
+      if (!fullText) {
+        try {
+          const nonStreamBody = isAnthropic
+            ? JSON.stringify({
+                model: cfg.model,
+                system: '你是一位专业的网络安全分析师，擅长分析局域网设备的安全风险。请使用中文回答，输出 Markdown 格式。',
+                messages: [{ role: 'user', content: prompt }],
+                max_tokens: Math.min(cfg.maxTokens || 2000, 4096),
+                stream: false
+              })
+            : JSON.stringify({
+                model: cfg.model,
+                messages: [
+                  { role: 'system', content: '你是一位专业的网络安全分析师，擅长分析局域网设备的安全风险。请使用中文回答，输出 Markdown 格式。' },
+                  { role: 'user', content: prompt }
+                ],
+                max_tokens: cfg.maxTokens || 2000,
+                temperature: cfg.temperature || 0.7,
+                stream: false
+              });
+          const ctrl2 = typeof AbortController !== 'undefined' ? new AbortController() : null;
+          const t2 = setTimeout(() => ctrl2 && ctrl2.abort(), 45000);
+          const res2 = await fetch(url, {
+            method: 'POST', headers, body: nonStreamBody, signal: ctrl2 ? ctrl2.signal : undefined
+          });
+          clearTimeout(t2);
+          if (res2.ok) {
+            const text2 = await res2.text();
+            try {
+              const j2 = JSON.parse(text2);
+              const txt2 = extractChoiceText(j2);
+              if (txt2) fullText = txt2;
+            } catch (_) { /* not JSON */ }
+          }
+        } catch (_) { /* ignore fallback */ }
+      }
+
+      if (!fullText) return { success: false, error: '响应为空，请尝试更换模型（有些中间件 stream=true 时只推心跳不推内容）' };
+      return { success: true, content: fullText };
+    } catch (e) {
+      if (e && e.name === 'AbortError') return { success: false, error: `请求超时（${timeoutMs / 1000}s），请检查网络或端点` };
+      return { success: false, error: e.message || String(e) };
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  // Promise 超时包装：防止 ipcRenderer.invoke(未注册事件) 永远 pending
+  function withTimeout(promise, ms, msg) {
+    let timerId;
+    const timeout = new Promise((_, reject) => {
+      timerId = setTimeout(() => reject(new Error(msg || `超时（${ms / 1000}s）`)), ms);
+    });
+    return Promise.race([promise, timeout]).finally(() => clearTimeout(timerId));
+  }
+
   async function runAiAnalysis() {
     if (aiAnalyzing) return;
     if (!currentDetailDevice) {
@@ -2072,10 +2326,9 @@
       return;
     }
 
-    // 如果没配置 AI，提示配置（但允许预览模式不强制）
     const cfg = await loadAiConfig();
     const configured = !!(cfg && cfg.apiKey && cfg.baseUrl && cfg.model);
-    if (!configured && isElectron) {
+    if (!configured) {
       showToast('请先配置 AI 模型');
       openAiConfig();
       return;
@@ -2084,64 +2337,103 @@
     aiAnalyzing = true;
     const btn = document.getElementById('ai-analyze-btn');
     const resultEl = document.getElementById('ai-result');
-    btn.disabled = true;
-    btn.innerHTML = '<i data-lucide="loader-2" style="width:13px;height:13px;animation:spin 1s linear infinite;"></i> AI 分析中...';
-    lucide.createIcons();
 
-    // 显示流式接收状态
-    resultEl.innerHTML = '<div class="ai-analysis-streaming"><div class="dot"></div> AI 正在分析设备信息...</div>';
-
-    // 收集该设备的告警信息
-    const deviceAlerts = activeAlerts.filter(a => a.ip === currentDetailDevice.ip);
-    const scanContext = {
-      cidr: selectedAdapter?.cidr || '-',
-      alerts: deviceAlerts
+    // 显示诊断状态：步骤 + spinner
+    const renderStep = (stepText) => {
+      resultEl.innerHTML = `
+        <div class="ai-analysis-streaming"><div class="dot"></div>
+          <div style="display:flex;flex-direction:column;gap:2px;">
+            <span style="font-weight:600;color:var(--scanner-ink);">AI 分析中...</span>
+            <span style="font-size:10px;color:var(--scanner-ink-3);">${stepText}</span>
+          </div>
+        </div>`;
     };
 
-    let streamedText = '';
-
     try {
-      // 监听流式 chunk（移入 try 内部，避免 api 不存在时直接抛出未捕获异常）
-      if (aiStreamCleanup) aiStreamCleanup();
+      btn.disabled = true;
+      btn.innerHTML = '<i data-lucide="loader-2" style="width:13px;height:13px;animation:spin 1s linear infinite;"></i> 分析中';
+      lucide.createIcons();
+
+      const deviceAlerts = activeAlerts.filter(a => a.ip === currentDetailDevice.ip);
+      const scanContext = {
+        cidr: selectedAdapter?.cidr || '-',
+        alerts: deviceAlerts
+      };
+      const modeName = (isElectron && api.aiAnalyzeDevice) ? 'Electron IPC 模式' : '浏览器 Fetch 模式';
+      renderStep(`环境: ${modeName}<br>模型: ${cfg.model}<br>准备发送请求 (0s)...`);
+
+      let streamedText = '';
+      const appendChunk = (chunk) => {
+        streamedText += chunk;
+        resultEl.innerHTML = '<div class="ai-analysis-content">' + renderMarkdown(streamedText) + '</div>';
+      };
+
+      // 清理 + 重新挂接 Electron 流式监听
+      if (aiStreamCleanup) { try { aiStreamCleanup(); } catch (_) {} aiStreamCleanup = null; }
       if (isElectron && api.onAiStreamChunk) {
-        aiStreamCleanup = api.onAiStreamChunk((chunk) => {
-          streamedText += chunk;
-          const display = renderMarkdown(streamedText);
-          resultEl.innerHTML = '<div class="ai-analysis-content">' + display + '</div>';
-        });
+        aiStreamCleanup = api.onAiStreamChunk(appendChunk);
       }
 
       let result;
+      const startedAt = Date.now();
+
       if (isElectron && api.aiAnalyzeDevice) {
-        result = await api.aiAnalyzeDevice({
-          device: currentDetailDevice,
-          localInfo: localInfo,
-          scanContext: scanContext
-        });
+        // 关键：用 Promise.race 给 IPC 加 75 秒超时，避免 invoke 永远 pending
+        renderStep(`环境: ${modeName}<br>模型: ${cfg.model}<br>已发送请求，等待响应 (${((Date.now() - startedAt) / 1000).toFixed(1)}s)...`);
+        try {
+          result = await withTimeout(
+            api.aiAnalyzeDevice({
+              device: currentDetailDevice,
+              localInfo: localInfo,
+              scanContext: scanContext
+            }),
+            75000,
+            'Electron IPC 调用超时（75s），可能主进程未监听该事件或无网络，请重启程序后重试'
+          );
+        } catch (ipcErr) {
+          result = { success: false, error: ipcErr.message || String(ipcErr) };
+        }
+      } else if (!isElectron && !window.fetch) {
+        result = { success: false, error: '当前环境不支持 fetch，请使用现代浏览器或用 Electron 打开本程序' };
       } else {
-        result = await mockAiAnalysis(currentDetailDevice, scanContext, (chunk) => {
-          streamedText += chunk;
-          const display = renderMarkdown(streamedText);
-          resultEl.innerHTML = '<div class="ai-analysis-content">' + display + '</div>';
-        });
+        renderStep(`环境: ${modeName}<br>端点: ${cfg.baseUrl.replace(/\/+$/, '')}<br>已发送请求，等待响应...`);
+        result = await fetchAiAnalysis(cfg, currentDetailDevice, scanContext, appendChunk, 75000);
       }
 
-      if (aiStreamCleanup) { aiStreamCleanup(); aiStreamCleanup = null; }
+      if (aiStreamCleanup) { try { aiStreamCleanup(); } catch (_) {} aiStreamCleanup = null; }
 
       if (result.success) {
         const html = renderMarkdown(result.content || streamedText);
-        resultEl.innerHTML = '<div class="ai-analysis-content">' + html + '</div>';
+        if (!html || html.length < 10) {
+          resultEl.innerHTML = '<div class="ai-analysis-error"><i data-lucide="alert-triangle" style="width:13px;height:13px;"></i> AI 返回内容为空，请尝试更换模型或调整 Prompt</div>';
+        } else {
+          resultEl.innerHTML = '<div class="ai-analysis-content">' + html + '</div>';
+        }
       } else {
-        resultEl.innerHTML = '<div class="ai-analysis-error"><i data-lucide="alert-triangle" style="width:13px;height:13px;"></i> ' + (result.error || '分析失败') + '</div>';
+        resultEl.innerHTML =
+          '<div class="ai-analysis-error">' +
+          '<i data-lucide="alert-triangle" style="width:13px;height:13px;vertical-align:-2px;"></i> ' +
+          '<b style="margin-right:6px;">分析失败</b>' +
+          '<div style="margin-top:6px;line-height:1.6;word-break:break-all;">' +
+          (result.error || '未知错误') +
+          '</div>' +
+          '<div style="margin-top:10px;font-size:10px;color:var(--scanner-ink-3);">' +
+          '环境: ' + modeName + '｜模型: ' + cfg.model + '｜端点: ' + cfg.baseUrl +
+          '</div></div>';
       }
+      lucide.createIcons();
     } catch (e) {
-      if (aiStreamCleanup) { aiStreamCleanup(); aiStreamCleanup = null; }
-      resultEl.innerHTML = '<div class="ai-analysis-error">分析出错：' + e.message + '</div>';
+      if (aiStreamCleanup) { try { aiStreamCleanup(); } catch (_) {} aiStreamCleanup = null; }
+      resultEl.innerHTML =
+        '<div class="ai-analysis-error">' +
+        '<b>分析异常</b>' +
+        '<div style="margin-top:6px;">' + (e && e.message ? e.message : String(e)) + '</div>' +
+        '</div>';
     } finally {
       aiAnalyzing = false;
       btn.disabled = false;
       btn.innerHTML = '<i data-lucide="brain"></i> 重新分析';
-      lucide.createIcons();
+      try { lucide.createIcons(); } catch (_) {}
     }
   }
 

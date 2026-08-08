@@ -503,7 +503,8 @@ ipcMain.handle('ai:testConnection', async (event, config) => {
 
     let urlStr, postData, headers;
     if (isAnthropic) {
-      urlStr = config.baseUrl.replace(/\/+$/, '') + '/messages';
+      const anthBase = config.baseUrl.replace(/\/+$/, '');
+      urlStr = anthBase + (anthBase.includes('/v1') ? '/messages' : '/v1/messages');
       postData = JSON.stringify({
         model: config.model,
         messages: [{ role: 'user', content: '回复"连接成功"四个字' }],
@@ -639,19 +640,74 @@ ${deviceInfo.alerts}
     // 检测 API 类型：URL 包含 anthropic 则使用 Anthropic 格式，否则 OpenAI
     const isAnthropic = config.baseUrl.toLowerCase().includes('anthropic');
 
+    // 多字段兼容解析（适配各种 OpenAI 兼容中间件）
+    const extractChoiceText = (json) => {
+      if (!json) return null;
+      if (json.type === 'content_block_delta' && json.delta?.text) return json.delta.text;
+      if (json.type === 'message_start' && json.message?.content?.[0]?.text) return json.message.content[0].text;
+      if (json.type === 'message_delta' && json.delta?.text) return json.delta.text;
+      if (Array.isArray(json.content)) {
+        const texts = json.content.filter(c => c && c.type === 'text' && c.text).map(c => c.text);
+        if (texts.length) return texts.join('');
+      }
+      if (typeof json.content === 'string' && json.content) return json.content;
+      const ch0 = json.choices && json.choices[0];
+      if (ch0) {
+        if (typeof ch0.delta?.content === 'string' && ch0.delta.content) return ch0.delta.content;
+        if (typeof ch0.message?.content === 'string' && ch0.message.content) return ch0.message.content;
+        if (typeof ch0.text === 'string' && ch0.text) return ch0.text;
+        if (typeof ch0.content === 'string' && ch0.content) return ch0.content;
+      }
+      if (typeof json.text === 'string' && json.text) return json.text;
+      if (typeof json.output === 'string' && json.output) return json.output;
+      if (typeof json.answer === 'string' && json.answer) return json.answer;
+      if (typeof json.result === 'string' && json.result) return json.result;
+      return null;
+    };
+
+    // 发送 HTTP 请求的辅助函数
+    function doRequest(urlStr, headers, postData, timeoutMs) {
+      const urlObj = new URL(urlStr);
+      const isHttps = urlObj.protocol === 'https:';
+      const lib = isHttps ? https : http;
+
+      return new Promise((resolve, reject) => {
+        const options = {
+          hostname: urlObj.hostname,
+          port: urlObj.port || (isHttps ? 443 : 80),
+          path: urlObj.pathname + (urlObj.search || ''),
+          method: 'POST',
+          headers: { ...headers, 'Content-Length': Buffer.byteLength(postData) }
+        };
+
+        const req = lib.request(options, (res) => {
+          let body = '';
+          res.on('data', (chunk) => { body += chunk.toString(); });
+          res.on('end', () => {
+            resolve({ statusCode: res.statusCode, body });
+          });
+        });
+
+        req.on('error', (e) => reject(new Error(e.message)));
+        req.setTimeout(timeoutMs, () => { req.destroy(); reject(new Error(`请求超时（${timeoutMs / 1000}s）`)); });
+        req.write(postData);
+        req.end();
+      });
+    }
+
+    const baseUrl = config.baseUrl.replace(/\/+$/, '');
+
+    // ── 第一步：直接用非流式请求（最可靠） ──
     let urlStr, postData, headers;
 
     if (isAnthropic) {
-      // ── Anthropic / Claude 格式 ──
-      urlStr = config.baseUrl.replace(/\/+$/, '') + '/messages';
+      urlStr = baseUrl + (baseUrl.includes('/v1') ? '/messages' : '/v1/messages');
       postData = JSON.stringify({
         model: config.model,
         system: '你是一位专业的网络安全分析师，擅长分析局域网设备的安全风险。请使用中文回答，输出 Markdown 格式。',
-        messages: [
-          { role: 'user', content: prompt }
-        ],
+        messages: [{ role: 'user', content: prompt }],
         max_tokens: Math.min(config.maxTokens || 2000, 4096),
-        stream: true
+        stream: false
       });
       headers = {
         'Content-Type': 'application/json',
@@ -659,9 +715,72 @@ ${deviceInfo.alerts}
         'anthropic-version': '2023-06-01'
       };
     } else {
-      // ── OpenAI 兼容格式 ──
-      urlStr = config.baseUrl.replace(/\/+$/, '') + '/chat/completions';
+      urlStr = baseUrl + '/chat/completions';
       postData = JSON.stringify({
+        model: config.model,
+        messages: [
+          { role: 'system', content: '你是一位专业的网络安全分析师，擅长分析局域网设备的安全风险。请使用中文回答，输出 Markdown 格式。' },
+          { role: 'user', content: prompt }
+        ],
+        max_tokens: config.maxTokens || 2000,
+        temperature: config.temperature || 0.7,
+        stream: false
+      });
+      headers = {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${config.apiKey}`
+      };
+    }
+
+    const res = await doRequest(urlStr, headers, postData, 60000);
+
+    // 非 2xx 错误
+    if (res.statusCode < 200 || res.statusCode >= 300) {
+      let msg = `HTTP ${res.statusCode}`;
+      try {
+        const j = JSON.parse(res.body);
+        if (j.error?.message) msg += ': ' + j.error.message;
+        else if (j.message) msg += ': ' + j.message;
+      } catch (_) {
+        if (res.body) msg += ': ' + res.body.slice(0, 300);
+      }
+      return { success: false, error: msg };
+    }
+
+    // 解析非流式 JSON 响应
+    let fullText = '';
+    try {
+      const j = JSON.parse(res.body);
+      fullText = extractChoiceText(j) || '';
+    } catch (_) {
+      // 响应不是 JSON，可能是纯文本
+      if (res.body && res.body.trim()) fullText = res.body.trim();
+    }
+
+    // 如果非流式拿到了内容，直接返回
+    if (fullText) {
+      // 模拟流式推送（一次性推全部内容，让前端有"打字机"效果）
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        const chunks = fullText.match(/[\s\S]{1,20}/g) || [fullText];
+        for (const chunk of chunks) {
+          mainWindow.webContents.send('ai:streamChunk', chunk);
+        }
+      }
+      return { success: true, content: fullText };
+    }
+
+    // ── 第二步：非流式也没拿到内容，尝试流式请求 ──
+    let streamPostData;
+    if (isAnthropic) {
+      streamPostData = JSON.stringify({
+        model: config.model,
+        system: '你是一位专业的网络安全分析师，擅长分析局域网设备的安全风险。请使用中文回答，输出 Markdown 格式。',
+        messages: [{ role: 'user', content: prompt }],
+        max_tokens: Math.min(config.maxTokens || 2000, 4096),
+        stream: true
+      });
+    } else {
+      streamPostData = JSON.stringify({
         model: config.model,
         messages: [
           { role: 'system', content: '你是一位专业的网络安全分析师，擅长分析局域网设备的安全风险。请使用中文回答，输出 Markdown 格式。' },
@@ -671,95 +790,74 @@ ${deviceInfo.alerts}
         temperature: config.temperature || 0.7,
         stream: true
       });
-      headers = {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${config.apiKey}`
-      };
     }
 
-    const urlObj = new URL(urlStr);
-    const isHttps = urlObj.protocol === 'https:';
-    const lib = isHttps ? https : http;
-    headers['Content-Length'] = Buffer.byteLength(postData);
+    const streamRes = await doRequest(urlStr, headers, streamPostData, 60000);
 
-    return await new Promise((resolve, reject) => {
-      const options = {
-        hostname: urlObj.hostname,
-        port: urlObj.port || (isHttps ? 443 : 80),
-        path: urlObj.pathname + (urlObj.search || ''),
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${config.apiKey}`,
-          'Content-Length': Buffer.byteLength(postData)
-        }
-      };
+    if (streamRes.statusCode < 200 || streamRes.statusCode >= 300) {
+      let msg = `HTTP ${streamRes.statusCode}`;
+      try {
+        const j = JSON.parse(streamRes.body);
+        if (j.error?.message) msg += ': ' + j.error.message;
+      } catch (_) {
+        if (streamRes.body) msg += ': ' + streamRes.body.slice(0, 300);
+      }
+      return { success: false, error: msg };
+    }
 
-      const req = lib.request(options, (res) => {
-        let fullText = '';
-        let buffer = '';
-        let errBody = '';
-
-        // 非 2xx 收集错误信息
-        if (res.statusCode < 200 || res.statusCode >= 300) {
-          res.on('data', (chunk) => { errBody += chunk.toString(); });
-          res.on('end', () => {
-            let msg = `HTTP ${res.statusCode}`;
-            try {
-              const j = JSON.parse(errBody);
-              if (j.error?.message) msg += ': ' + j.error.message;
-              else if (j.message) msg += ': ' + j.message;
-            } catch (_) {
-              if (errBody) msg += ': ' + errBody.slice(0, 200);
-            }
-            resolve({ success: false, error: msg });
-          });
-          return;
-        }
-
-        res.on('data', (chunk) => {
-          buffer += chunk.toString();
-          const lines = buffer.split('\n');
-          buffer = lines.pop() || '';
-
-          for (const line of lines) {
-            const trimmed = line.trim();
-            if (!trimmed || trimmed.startsWith(': ')) continue;
-            if (!trimmed.startsWith('data: ')) continue;
-            const data = trimmed.slice(6);
-            if (data === '[DONE]') continue;
-            try {
-              const json = JSON.parse(data);
-              let delta = null;
-              if (isAnthropic) {
-                // Anthropic 格式: { type: "content_block_delta", delta: { type: "text_delta", text: "..." } }
-                if (json.type === 'content_block_delta' && json.delta?.text) {
-                  delta = json.delta.text;
-                }
-              } else {
-                // OpenAI 格式: { choices: [{ delta: { content: "..." } }] }
-                delta = json.choices?.[0]?.delta?.content;
-              }
-              if (delta) {
-                fullText += delta;
-                if (mainWindow && !mainWindow.isDestroyed()) {
-                  mainWindow.webContents.send('ai:streamChunk', delta);
-                }
-              }
-            } catch (e) { /* skip invalid JSON */ }
+    // 解析流式响应
+    let streamText = '';
+    let streamEmpty = true;
+    const lines = streamRes.body.split('\n');
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith(': ')) continue;
+      if (!trimmed.startsWith('data: ')) continue;
+      const data = trimmed.slice(6);
+      if (data === '[DONE]') continue;
+      try {
+        const json = JSON.parse(data);
+        const delta = extractChoiceText(json);
+        if (delta) {
+          streamEmpty = false;
+          streamText += delta;
+          if (mainWindow && !mainWindow.isDestroyed()) {
+            mainWindow.webContents.send('ai:streamChunk', delta);
           }
-        });
+        }
+      } catch (e) { /* skip */ }
+    }
 
-        res.on('end', () => {
-          resolve({ success: true, content: fullText });
-        });
-      });
+    // 流式也解析不出，尝试拼接整体
+    if (streamEmpty && streamRes.body.trim()) {
+      try {
+        let cleaned = streamRes.body;
+        if (cleaned.includes('data: ')) {
+          cleaned = cleaned.split('\n').map(l => l.trim())
+            .filter(l => l.startsWith('data: ') && l.slice(6) !== '[DONE]')
+            .map(l => l.slice(6)).join('');
+        }
+        if (cleaned) {
+          const j = JSON.parse(cleaned);
+          streamText = extractChoiceText(j) || '';
+        }
+      } catch (_) { /* ignore */ }
+      if (!streamText) {
+        try {
+          const rawJ = JSON.parse(streamRes.body);
+          streamText = extractChoiceText(rawJ) || '';
+        } catch (_) { /* ignore */ }
+      }
+    }
 
-      req.on('error', (e) => reject(new Error(e.message)));
-      req.setTimeout(60000, () => { req.destroy(); reject(new Error('请求超时（60s）')); });
-      req.write(postData);
-      req.end();
-    });
+    if (streamText) {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('ai:streamChunk', streamText);
+      }
+      return { success: true, content: streamText };
+    }
+
+    return { success: false, error: 'AI 返回内容为空。\n请检查：\n1. 模型名称是否正确\n2. API Key 是否有效\n3. 端点 URL 是否正确\n4. 账户是否有余额/额度\n\n响应原文（前500字符）：\n' + (res.body || streamRes.body || '').slice(0, 500) };
   } catch (error) {
     return { success: false, error: error.message };
   }
