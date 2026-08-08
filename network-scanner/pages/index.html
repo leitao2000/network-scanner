@@ -2181,35 +2181,35 @@ body {
                 </div>
                 <div id="local-ip" class="text-3xl font-black scanner-mono mb-5 tracking-tight" style="font-size:clamp(22px, 2.4vw, 30px);">-</div>
 
-                <!-- 4 项网络参数（2x2 grid） -->
-                <div class="grid grid-cols-2 gap-2 mb-4">
-                  <div class="info-chip-row px-2.5 py-2 rounded-lg bg-white/12 backdrop-blur-sm">
-                    <div class="flex items-center gap-1.5 mb-0.5 opacity-85">
-                      <i data-lucide="wifi" style="width:11px;height:11px;"></i>
-                      <span class="text-[9.5px] font-semibold uppercase tracking-wide">网关</span>
+                <!-- 4 项网络参数（单列，一行一个，横向行布局） -->
+                <div class="space-y-2 mb-4">
+                  <div class="info-chip-row flex items-center justify-between px-3 py-2.5 rounded-lg bg-white/12 backdrop-blur-sm">
+                    <div class="flex items-center gap-2 opacity-85">
+                      <i data-lucide="wifi" style="width:13px;height:13px;"></i>
+                      <span class="text-[11px] font-semibold tracking-wide">网关</span>
                     </div>
-                    <div id="local-gateway" class="scanner-mono text-[12.5px] font-bold leading-none truncate">-</div>
+                    <div id="local-gateway" class="scanner-mono text-[13px] font-bold leading-none truncate">-</div>
                   </div>
-                  <div class="info-chip-row px-2.5 py-2 rounded-lg bg-white/12 backdrop-blur-sm">
-                    <div class="flex items-center gap-1.5 mb-0.5 opacity-85">
-                      <i data-lucide="hash" style="width:11px;height:11px;"></i>
-                      <span class="text-[9.5px] font-semibold uppercase tracking-wide">子网掩码</span>
+                  <div class="info-chip-row flex items-center justify-between px-3 py-2.5 rounded-lg bg-white/12 backdrop-blur-sm">
+                    <div class="flex items-center gap-2 opacity-85">
+                      <i data-lucide="hash" style="width:13px;height:13px;"></i>
+                      <span class="text-[11px] font-semibold tracking-wide">子网掩码</span>
                     </div>
-                    <div id="local-netmask" class="scanner-mono text-[12.5px] font-bold leading-none truncate">-</div>
+                    <div id="local-netmask" class="scanner-mono text-[13px] font-bold leading-none truncate">-</div>
                   </div>
-                  <div class="info-chip-row px-2.5 py-2 rounded-lg bg-white/12 backdrop-blur-sm">
-                    <div class="flex items-center gap-1.5 mb-0.5 opacity-85">
-                      <i data-lucide="radio" style="width:11px;height:11px;"></i>
-                      <span class="text-[9.5px] font-semibold uppercase tracking-wide">广播地址</span>
+                  <div class="info-chip-row flex items-center justify-between px-3 py-2.5 rounded-lg bg-white/12 backdrop-blur-sm">
+                    <div class="flex items-center gap-2 opacity-85">
+                      <i data-lucide="radio" style="width:13px;height:13px;"></i>
+                      <span class="text-[11px] font-semibold tracking-wide">广播地址</span>
                     </div>
-                    <div id="local-broadcast" class="scanner-mono text-[12.5px] font-bold leading-none truncate">-</div>
+                    <div id="local-broadcast" class="scanner-mono text-[13px] font-bold leading-none truncate">-</div>
                   </div>
-                  <div class="info-chip-row px-2.5 py-2 rounded-lg bg-white/12 backdrop-blur-sm">
-                    <div class="flex items-center gap-1.5 mb-0.5 opacity-85">
-                      <i data-lucide="activity" style="width:11px;height:11px;"></i>
-                      <span class="text-[9.5px] font-semibold uppercase tracking-wide">主机数</span>
+                  <div class="info-chip-row flex items-center justify-between px-3 py-2.5 rounded-lg bg-white/12 backdrop-blur-sm">
+                    <div class="flex items-center gap-2 opacity-85">
+                      <i data-lucide="activity" style="width:13px;height:13px;"></i>
+                      <span class="text-[11px] font-semibold tracking-wide">主机数</span>
                     </div>
-                    <div id="local-host-count" class="scanner-mono text-[12.5px] font-bold leading-none">-</div>
+                    <div id="local-host-count" class="scanner-mono text-[13px] font-bold leading-none">-</div>
                   </div>
                 </div>
 
