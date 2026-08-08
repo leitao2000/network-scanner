@@ -23,7 +23,7 @@
     "appId": "com.traedesign.local-network-scanner",
     "productName": "本地网络扫描工具",
     "directories": {
-      "output": "release"
+      "output": "dist"
     },
     "files": [
       "main.js",
