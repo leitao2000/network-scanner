@@ -34,6 +34,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   aiSaveConfig: (config) => ipcRenderer.invoke('ai:saveConfig', config),
   aiTestConnection: (config) => ipcRenderer.invoke('ai:testConnection', config),
   aiAnalyzeDevice: (data) => ipcRenderer.invoke('ai:analyzeDevice', data),
+  aiFetchModels: (config) => ipcRenderer.invoke('ai:fetchModels', config),
   onAiStreamChunk: (callback) => {
     const wrapped = (event, chunk) => callback(chunk);
     ipcRenderer.on('ai:streamChunk', wrapped);

@@ -564,6 +564,79 @@ ipcMain.handle('ai:testConnection', async (event, config) => {
   }
 });
 
+// 获取服务商可用模型列表
+ipcMain.handle('ai:fetchModels', async (event, config) => {
+  try {
+    const https = require('https');
+    const http = require('http');
+    const baseUrl = config.baseUrl.replace(/\/+$/, '');
+    const isAnthropic = config.baseUrl.toLowerCase().includes('anthropic');
+
+    // 智谱 OpenAI 兼容端点用 /models，Anthropic 兼容端点用 /v1/models
+    const urlStr = isAnthropic
+      ? baseUrl + (baseUrl.includes('/v1') ? '/models' : '/v1/models')
+      : baseUrl + '/models';
+    const urlObj = new URL(urlStr);
+    const isHttps = urlObj.protocol === 'https:';
+    const lib = isHttps ? https : http;
+
+    const models = await new Promise((resolve, reject) => {
+      const options = {
+        hostname: urlObj.hostname,
+        port: urlObj.port || (isHttps ? 443 : 80),
+        path: urlObj.pathname + (urlObj.search || ''),
+        method: 'GET',
+        headers: isAnthropic
+          ? { 'x-api-key': config.apiKey, 'anthropic-version': '2023-06-01' }
+          : { 'Authorization': `Bearer ${config.apiKey}` }
+      };
+
+      const req = lib.request(options, (res) => {
+        let body = '';
+        res.on('data', (chunk) => { body += chunk; });
+        res.on('end', () => {
+          if (res.statusCode >= 200 && res.statusCode < 300) {
+            try {
+              const j = JSON.parse(body);
+              // OpenAI 格式: { data: [{ id: "gpt-4o", ... }] }
+              // Anthropic 格式: { data: [{ id: "claude-...", ... }] }
+              // 智谱格式: { data: [{ id: "glm-4", ... }] }
+              let list = [];
+              if (Array.isArray(j.data)) {
+                list = j.data.map(m => m.id || m.name).filter(Boolean);
+              } else if (Array.isArray(j.models)) {
+                list = j.models.map(m => typeof m === 'string' ? m : (m.id || m.name)).filter(Boolean);
+              } else if (Array.isArray(j)) {
+                list = j.map(m => typeof m === 'string' ? m : (m.id || m.name)).filter(Boolean);
+              }
+              resolve(list.sort());
+            } catch (e) {
+              reject(new Error('解析模型列表失败: ' + e.message));
+            }
+          } else {
+            let msg = `HTTP ${res.statusCode}`;
+            try {
+              const ej = JSON.parse(body);
+              if (ej.error?.message) msg += ': ' + ej.error.message;
+              else if (ej.message) msg += ': ' + ej.message;
+            } catch (_) {
+              if (body) msg += ': ' + body.slice(0, 200);
+            }
+            reject(new Error(msg));
+          }
+        });
+      });
+      req.on('error', (e) => reject(new Error(e.message)));
+      req.setTimeout(10000, () => { req.destroy(); reject(new Error('请求超时（10s）')); });
+      req.end();
+    });
+
+    return { success: true, models };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
 // AI 分析设备
 ipcMain.handle('ai:analyzeDevice', async (event, { device, localInfo, scanContext }) => {
   let config;

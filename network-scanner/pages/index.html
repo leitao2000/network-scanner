@@ -1440,19 +1440,44 @@ body {
         </div>
         <div class="ai-config-dialog-body">
           <div class="ai-config-field">
+            <label>服务商</label>
+            <select id="ai-provider">
+              <option value="custom">自定义</option>
+              <option value="openai">OpenAI</option>
+              <option value="deepseek">DeepSeek 深度求索</option>
+              <option value="zhipu">智谱 AI (GLM)</option>
+              <option value="moonshot">Moonshot 月之暗面 (Kimi)</option>
+              <option value="qwen">阿里通义千问</option>
+              <option value="baidu">百度文心一言</option>
+              <option value="minimax">MiniMax 海螺</option>
+              <option value="baichuan">百川智能</option>
+              <option value="yi">零一万物 (Yi)</option>
+              <option value="stepfun">阶跃星辰 (Step)</option>
+              <option value="ollama">Ollama 本地模型</option>
+            </select>
+            <div class="hint" id="ai-provider-hint">选择服务商后端点自动填充，仅需填写密钥和选择模型</div>
+          </div>
+          <div class="ai-config-field" id="ai-base-url-field" style="display:none;">
             <label>API 端点 (Base URL)</label>
             <input id="ai-base-url" type="text" placeholder="https://api.openai.com/v1" />
-            <div class="hint">支持 OpenAI 格式 (https://api.openai.com/v1) 和 Anthropic 格式 (含 anthropic 的 URL 自动识别)</div>
+            <div class="hint">支持 OpenAI 格式和 Anthropic 格式（含 anthropic 的 URL 自动识别）</div>
           </div>
           <div class="ai-config-field">
             <label>API Key</label>
             <input id="ai-api-key" type="password" placeholder="sk-..." />
-            <div class="hint">用于身份验证的密钥，本地保存不会上传</div>
+            <div class="hint" id="ai-api-key-hint">用于身份验证的密钥，本地保存不会上传</div>
           </div>
           <div class="ai-config-field">
             <label>模型名称</label>
-            <input id="ai-model" type="text" placeholder="gpt-4o / deepseek-chat / qwen-plus" />
-            <div class="hint">调用的大语言模型标识符</div>
+            <div style="display:flex;gap:8px;align-items:center;">
+              <input id="ai-model" type="text" placeholder="选择或输入模型名称" style="flex:1;" list="ai-model-list" />
+              <button id="ai-fetch-models-btn" type="button" style="white-space:nowrap;padding:8px 14px;border-radius:8px;border:1px solid var(--border);background:var(--secondary);color:var(--secondary-foreground);font-size:13px;cursor:pointer;transition:all .2s;display:flex;align-items:center;gap:6px;">
+                <i data-lucide="download-cloud" style="width:14px;height:14px;"></i>
+                <span>获取模型</span>
+              </button>
+            </div>
+            <datalist id="ai-model-list"></datalist>
+            <div class="hint" id="ai-model-hint">点击"获取模型"可从服务商拉取可用列表，也可直接输入</div>
           </div>
           <div class="ai-config-field">
             <label>最大 Token 数</label>

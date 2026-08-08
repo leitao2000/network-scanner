@@ -1892,6 +1892,8 @@
       if (e.target.id === 'ai-config-overlay') closeAiConfig();
     });
     document.getElementById('ai-test-btn')?.addEventListener('click', testAiConnection);
+    document.getElementById('ai-fetch-models-btn')?.addEventListener('click', fetchModels);
+    document.getElementById('ai-provider')?.addEventListener('change', (e) => applyProviderSelection(e.target.value));
     document.getElementById('ai-save-btn')?.addEventListener('click', saveAiConfig);
 
     // AI 分析按钮
@@ -1930,6 +1932,22 @@
     return aiConfigCache;
   }
 
+  // ── 供应商预设数据 ──
+  const AI_PROVIDERS = {
+    custom:     { name: '自定义', baseUrl: '', models: [], keyHint: '填写对应服务商的 API Key', keyPlaceholder: 'sk-...' },
+    openai:     { name: 'OpenAI', baseUrl: 'https://api.openai.com/v1', models: ['gpt-4o', 'gpt-4o-mini', 'gpt-4-turbo', 'gpt-3.5-turbo'], keyHint: 'OpenAI API Key（sk- 开头）', keyPlaceholder: 'sk-...' },
+    deepseek:   { name: 'DeepSeek', baseUrl: 'https://api.deepseek.com/v1', models: ['deepseek-chat', 'deepseek-reasoner'], keyHint: 'DeepSeek API Key', keyPlaceholder: 'sk-...' },
+    zhipu:      { name: '智谱 AI', baseUrl: 'https://open.bigmodel.cn/api/paas/v4', models: ['glm-4-plus', 'glm-4-flash', 'glm-4-air', 'glm-4-airx', 'glm-4-long', 'glm-4v', 'glm-4v-flash'], keyHint: '智谱 API Key', keyPlaceholder: 'xxx.xxx' },
+    moonshot:   { name: 'Moonshot', baseUrl: 'https://api.moonshot.cn/v1', models: ['moonshot-v1-8k', 'moonshot-v1-32k', 'moonshot-v1-128k'], keyHint: 'Moonshot API Key（sk- 开头）', keyPlaceholder: 'sk-...' },
+    qwen:       { name: '通义千问', baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1', models: ['qwen-plus', 'qwen-turbo', 'qwen-max', 'qwen-long'], keyHint: '阿里云 DashScope API Key', keyPlaceholder: 'sk-...' },
+    baidu:      { name: '文心一言', baseUrl: 'https://qianfan.baidubce.com/v2', models: ['ernie-4.0-turbo-8k', 'ernie-4.0-8k-latest', 'ernie-3.5-8k', 'ernie-speed-128k'], keyHint: '百度千帆 API Key', keyPlaceholder: '...' },
+    minimax:    { name: 'MiniMax', baseUrl: 'https://api.minimax.chat/v1', models: ['abab6.5s-chat', 'abab6.5-chat', 'abab6-chat'], keyHint: 'MiniMax API Key', keyPlaceholder: '...' },
+    baichuan:   { name: '百川', baseUrl: 'https://api.baichuan-ai.com/v1', models: ['Baichuan4-Turbo', 'Baichuan3-Turbo', 'Baichuan2-Turbo'], keyHint: '百川 API Key', keyPlaceholder: 'sk-...' },
+    yi:         { name: '零一万物', baseUrl: 'https://api.lingyiwanwu.com/v1', models: ['yi-large', 'yi-medium', 'yi-lightning', 'yi-vision'], keyHint: '零一万物 API Key', keyPlaceholder: '...' },
+    stepfun:    { name: '阶跃星辰', baseUrl: 'https://api.stepfun.com/v1', models: ['step-1-8k', 'step-1-32k', 'step-1-128k', 'step-1v-8k', 'step-1v-32k'], keyHint: '阶跃星辰 API Key', keyPlaceholder: '...' },
+    ollama:     { name: 'Ollama', baseUrl: 'http://localhost:11434/v1', models: ['qwen2.5:7b', 'qwen2.5:14b', 'llama3.1:8b', 'llama3.1:70b', 'deepseek-r1:7b', 'deepseek-r1:14b'], keyHint: 'Ollama 默认无需密钥，随意填写即可', keyPlaceholder: 'ollama' },
+  };
+
   function openAiConfig() {
     const overlay = document.getElementById('ai-config-overlay');
     const statusEl = document.getElementById('ai-config-status');
@@ -1939,17 +1957,54 @@
     // 加载已保存的配置
     loadAiConfig().then(cfg => {
       if (cfg) {
+        // 尝试根据已保存的 baseUrl 匹配供应商
+        const provider = Object.values(AI_PROVIDERS).find(p => p.baseUrl && cfg.baseUrl && p.baseUrl === cfg.baseUrl);
+        const providerKey = provider ? Object.keys(AI_PROVIDERS).find(k => AI_PROVIDERS[k] === provider) : 'custom';
+        document.getElementById('ai-provider').value = providerKey;
+        applyProviderSelection(providerKey);
         document.getElementById('ai-base-url').value = cfg.baseUrl || '';
         document.getElementById('ai-api-key').value = cfg.apiKey || '';
         document.getElementById('ai-model').value = cfg.model || '';
         document.getElementById('ai-max-tokens').value = cfg.maxTokens || 2000;
         document.getElementById('ai-temperature').value = String(cfg.temperature || 0.7);
+      } else {
+        applyProviderSelection('custom');
       }
     });
   }
 
   function closeAiConfig() {
     document.getElementById('ai-config-overlay').style.display = 'none';
+  }
+
+  // 供应商切换时自动填充端点、模型列表、密钥提示
+  function applyProviderSelection(providerKey) {
+    const p = AI_PROVIDERS[providerKey] || AI_PROVIDERS.custom;
+    const urlField = document.getElementById('ai-base-url-field');
+    const urlInput = document.getElementById('ai-base-url');
+    const keyHint = document.getElementById('ai-api-key-hint');
+    const keyInput = document.getElementById('ai-api-key');
+    const modelInput = document.getElementById('ai-model');
+    const datalist = document.getElementById('ai-model-list');
+
+    if (providerKey === 'custom') {
+      urlField.style.display = '';
+      urlInput.value = urlInput.value || '';
+    } else {
+      urlField.style.display = 'none';
+      urlInput.value = p.baseUrl;
+    }
+
+    keyHint.textContent = p.keyHint || '用于身份验证的密钥，本地保存不会上传';
+    keyInput.placeholder = p.keyPlaceholder || 'sk-...';
+
+    // 填充预设模型到 datalist
+    datalist.innerHTML = p.models.map(id => `<option value="${id}">`).join('');
+    // 如果当前模型不在预设列表中且预设列表不为空，清空让用户重新选
+    if (p.models.length > 0 && !p.models.includes(modelInput.value)) {
+      modelInput.value = '';
+    }
+    modelInput.placeholder = p.models.length > 0 ? '点击下拉选择或输入模型名称' : '输入模型名称';
   }
 
   function collectAiConfig() {
@@ -1960,6 +2015,91 @@
       maxTokens: parseInt(document.getElementById('ai-max-tokens').value) || 2000,
       temperature: parseFloat(document.getElementById('ai-temperature').value) || 0.7
     };
+  }
+
+  async function fetchModels() {
+    const btn = document.getElementById('ai-fetch-models-btn');
+    const hintEl = document.getElementById('ai-model-hint');
+    const inputEl = document.getElementById('ai-model');
+    const config = collectAiConfig();
+
+    if (!config.baseUrl || !config.apiKey) {
+      hintEl.textContent = '请先填写端点 URL 和 API Key';
+      hintEl.style.color = 'var(--destructive)';
+      return;
+    }
+
+    const originalHTML = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<i data-lucide="loader-2" style="width:14px;height:14px;animation:spin 1s linear infinite;"></i><span>获取中...</span>';
+    lucide.createIcons();
+    hintEl.textContent = '正在从服务商获取模型列表...';
+    hintEl.style.color = 'var(--muted-foreground)';
+
+    try {
+      let result;
+      if (isElectron && api.aiFetchModels) {
+        result = await api.aiFetchModels(config);
+      } else {
+        // 浏览器模式：直接 fetch
+        const isAnthropic = config.baseUrl.toLowerCase().includes('anthropic');
+        const baseUrl = config.baseUrl.replace(/\/+$/, '');
+        const url = isAnthropic
+          ? baseUrl + (baseUrl.includes('/v1') ? '/models' : '/v1/models')
+          : baseUrl + '/models';
+        const headers = isAnthropic
+          ? { 'x-api-key': config.apiKey, 'anthropic-version': '2023-06-01' }
+          : { 'Authorization': `Bearer ${config.apiKey}` };
+        const res = await fetch(url, { method: 'GET', headers });
+        if (!res.ok) {
+          let msg = `HTTP ${res.status}`;
+          const errText = await res.text();
+          try {
+            const j = JSON.parse(errText);
+            if (j.error?.message) msg += ': ' + j.error.message;
+            else if (j.message) msg += ': ' + j.message;
+          } catch (_) {
+            if (errText) msg += ': ' + errText.slice(0, 200);
+          }
+          result = { success: false, error: msg };
+        } else {
+          const j = await res.json();
+          let list = [];
+          if (Array.isArray(j.data)) list = j.data.map(m => m.id || m.name).filter(Boolean);
+          else if (Array.isArray(j.models)) list = j.models.map(m => typeof m === 'string' ? m : (m.id || m.name)).filter(Boolean);
+          else if (Array.isArray(j)) list = j.map(m => typeof m === 'string' ? m : (m.id || m.name)).filter(Boolean);
+          result = { success: true, models: list.sort() };
+        }
+      }
+
+      if (result.success && result.models && result.models.length > 0) {
+        // 填充 datalist
+        const datalist = document.getElementById('ai-model-list');
+        datalist.innerHTML = result.models.map(id => `<option value="${id}">`).join('');
+        hintEl.textContent = `成功获取 ${result.models.length} 个可用模型，点击输入框下拉选择`;
+        hintEl.style.color = 'var(--primary)';
+        // 如果当前输入框为空，自动选第一个
+        if (!inputEl.value && result.models.length > 0) {
+          inputEl.value = result.models[0];
+        }
+        // 自动展开下拉（聚焦）
+        inputEl.focus();
+        inputEl.click();
+      } else if (result.success && (!result.models || result.models.length === 0)) {
+        hintEl.textContent = '服务商返回了空模型列表';
+        hintEl.style.color = 'var(--destructive)';
+      } else {
+        hintEl.textContent = '获取失败：' + (result.error || '未知错误');
+        hintEl.style.color = 'var(--destructive)';
+      }
+    } catch (e) {
+      hintEl.textContent = '获取失败：' + e.message;
+      hintEl.style.color = 'var(--destructive)';
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = originalHTML;
+      lucide.createIcons();
+    }
   }
 
   async function testAiConnection() {
