@@ -27,6 +27,25 @@ function createWindow() {
 
   mainWindow.once('ready-to-show', () => {
     mainWindow.show();
+    // 开发模式自动打开 DevTools
+    if (process.env.NODE_ENV === 'development' || process.argv.includes('--dev')) {
+      mainWindow.webContents.openDevTools({ mode: 'detach' });
+    }
+  });
+
+  // 快捷键 F12 / Ctrl+Shift+I 打开/关闭 DevTools
+  mainWindow.webContents.on('before-input-event', (event, input) => {
+    if (input.type === 'keyDown') {
+      if (input.key === 'F12' || (input.control && input.shift && input.key.toLowerCase() === 'i')) {
+        mainWindow.webContents.toggleDevTools();
+        event.preventDefault();
+      }
+      // Ctrl+R 刷新页面
+      if (input.control && input.key.toLowerCase() === 'r') {
+        mainWindow.reload();
+        event.preventDefault();
+      }
+    }
   });
 
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
@@ -480,29 +499,47 @@ ipcMain.handle('ai:testConnection', async (event, config) => {
   try {
     const https = require('https');
     const http = require('http');
-    const urlStr = config.baseUrl.replace(/\/+$/, '') + '/chat/completions';
-    const urlObj = new URL(urlStr);
-    const isHttps = urlObj.protocol === 'https:';
-    const lib = isHttps ? https : http;
+    const isAnthropic = config.baseUrl.toLowerCase().includes('anthropic');
 
-    return await new Promise((resolve, reject) => {
-      const postData = JSON.stringify({
+    let urlStr, postData, headers;
+    if (isAnthropic) {
+      urlStr = config.baseUrl.replace(/\/+$/, '') + '/messages';
+      postData = JSON.stringify({
+        model: config.model,
+        messages: [{ role: 'user', content: '回复"连接成功"四个字' }],
+        max_tokens: 20
+      });
+      headers = {
+        'Content-Type': 'application/json',
+        'x-api-key': config.apiKey,
+        'anthropic-version': '2023-06-01'
+      };
+    } else {
+      urlStr = config.baseUrl.replace(/\/+$/, '') + '/chat/completions';
+      postData = JSON.stringify({
         model: config.model,
         messages: [{ role: 'user', content: '回复"连接成功"四个字' }],
         max_tokens: 20,
         temperature: 0
       });
+      headers = {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${config.apiKey}`
+      };
+    }
 
+    const urlObj = new URL(urlStr);
+    const isHttps = urlObj.protocol === 'https:';
+    const lib = isHttps ? https : http;
+    headers['Content-Length'] = Buffer.byteLength(postData);
+
+    return await new Promise((resolve, reject) => {
       const options = {
         hostname: urlObj.hostname,
         port: urlObj.port || (isHttps ? 443 : 80),
         path: urlObj.pathname + (urlObj.search || ''),
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${config.apiKey}`,
-          'Content-Length': Buffer.byteLength(postData)
-        }
+        headers: headers
       };
 
       const req = lib.request(options, (res) => {
@@ -598,21 +635,52 @@ ${deviceInfo.alerts}
   try {
     const https = require('https');
     const http = require('http');
-    const urlStr = config.baseUrl.replace(/\/+$/, '') + '/chat/completions';
+
+    // 检测 API 类型：URL 包含 anthropic 则使用 Anthropic 格式，否则 OpenAI
+    const isAnthropic = config.baseUrl.toLowerCase().includes('anthropic');
+
+    let urlStr, postData, headers;
+
+    if (isAnthropic) {
+      // ── Anthropic / Claude 格式 ──
+      urlStr = config.baseUrl.replace(/\/+$/, '') + '/messages';
+      postData = JSON.stringify({
+        model: config.model,
+        system: '你是一位专业的网络安全分析师，擅长分析局域网设备的安全风险。请使用中文回答，输出 Markdown 格式。',
+        messages: [
+          { role: 'user', content: prompt }
+        ],
+        max_tokens: Math.min(config.maxTokens || 2000, 4096),
+        stream: true
+      });
+      headers = {
+        'Content-Type': 'application/json',
+        'x-api-key': config.apiKey,
+        'anthropic-version': '2023-06-01'
+      };
+    } else {
+      // ── OpenAI 兼容格式 ──
+      urlStr = config.baseUrl.replace(/\/+$/, '') + '/chat/completions';
+      postData = JSON.stringify({
+        model: config.model,
+        messages: [
+          { role: 'system', content: '你是一位专业的网络安全分析师，擅长分析局域网设备的安全风险。请使用中文回答，输出 Markdown 格式。' },
+          { role: 'user', content: prompt }
+        ],
+        max_tokens: config.maxTokens || 2000,
+        temperature: config.temperature || 0.7,
+        stream: true
+      });
+      headers = {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${config.apiKey}`
+      };
+    }
+
     const urlObj = new URL(urlStr);
     const isHttps = urlObj.protocol === 'https:';
     const lib = isHttps ? https : http;
-
-    const postData = JSON.stringify({
-      model: config.model,
-      messages: [
-        { role: 'system', content: '你是一位专业的网络安全分析师，擅长分析局域网设备的安全风险。请使用中文回答，输出 Markdown 格式。' },
-        { role: 'user', content: prompt }
-      ],
-      max_tokens: config.maxTokens || 2000,
-      temperature: config.temperature || 0.7,
-      stream: true
-    });
+    headers['Content-Length'] = Buffer.byteLength(postData);
 
     return await new Promise((resolve, reject) => {
       const options = {
@@ -662,10 +730,18 @@ ${deviceInfo.alerts}
             if (data === '[DONE]') continue;
             try {
               const json = JSON.parse(data);
-              const delta = json.choices?.[0]?.delta?.content;
+              let delta = null;
+              if (isAnthropic) {
+                // Anthropic 格式: { type: "content_block_delta", delta: { type: "text_delta", text: "..." } }
+                if (json.type === 'content_block_delta' && json.delta?.text) {
+                  delta = json.delta.text;
+                }
+              } else {
+                // OpenAI 格式: { choices: [{ delta: { content: "..." } }] }
+                delta = json.choices?.[0]?.delta?.content;
+              }
               if (delta) {
                 fullText += delta;
-                // 流式推送给渲染进程
                 if (mainWindow && !mainWindow.isDestroyed()) {
                   mainWindow.webContents.send('ai:streamChunk', delta);
                 }

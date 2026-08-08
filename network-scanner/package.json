@@ -5,6 +5,7 @@
   "main": "main.js",
   "scripts": {
     "start": "electron .",
+    "dev": "electron . --dev",
     "test": "node test-scanner.js",
     "scan": "node scan-online-ips.js",
     "pack": "electron-builder --win",

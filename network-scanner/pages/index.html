@@ -464,7 +464,7 @@ body {
       }
       .action-panel.collapsed .action-panel-toggle { transform: rotate(-90deg); }
       .action-panel-body {
-        padding: 12px 14px;
+        padding: 12px 25px;
         display: flex;
         flex-direction: column;
         gap: 10px;
@@ -536,7 +536,7 @@ body {
       #portscan-result {
         display: flex;
         flex-direction: column;
-        gap: 6px;
+        gap: 8px;
       }
       #portscan-result .port-list {
         max-height: 300px;
@@ -544,7 +544,15 @@ body {
         overflow-x: hidden;
         -ms-overflow-style: none;
         scrollbar-width: none;
-        padding: 6px 4px 14px 2px;
+        padding: 4px 4px 0 4px;
+        box-sizing: border-box;
+      }
+      /* Chromium 滚动容器 padding-bottom 经典 bug：用 ::after 伪元素做底部 spacer */
+      #portscan-result .port-list::after {
+        content: '';
+        display: block;
+        height: 16px;
+        flex-shrink: 0;
       }
       #portscan-result .port-list::-webkit-scrollbar {
         width: 0;
@@ -552,8 +560,8 @@ body {
         display: none;
       }
       #portscan-result .action-panel-hint {
-        margin-top: auto;
-        padding-top: 6px;
+        flex-shrink: 0;
+        padding: 8px 2px 2px 2px;
         border-top: 1px dashed var(--scanner-border);
       }
       /* Ping / AI 结果多时同样内嵌滚动 */
@@ -564,7 +572,14 @@ body {
         overflow-x: hidden;
         -ms-overflow-style: none;
         scrollbar-width: none;
-        padding-right: 2px;
+        padding: 4px 4px 0 4px;
+        box-sizing: border-box;
+      }
+      #ping-result::after,
+      #ai-result::after {
+        content: '';
+        display: block;
+        height: 16px;
       }
       #ping-result::-webkit-scrollbar,
       #ai-result::-webkit-scrollbar {
@@ -1427,7 +1442,7 @@ body {
           <div class="ai-config-field">
             <label>API 端点 (Base URL)</label>
             <input id="ai-base-url" type="text" placeholder="https://api.openai.com/v1" />
-            <div class="hint">兼容 OpenAI 格式的 API 地址，如 https://api.openai.com/v1 或 http://localhost:11434/v1</div>
+            <div class="hint">支持 OpenAI 格式 (https://api.openai.com/v1) 和 Anthropic 格式 (含 anthropic 的 URL 自动识别)</div>
           </div>
           <div class="ai-config-field">
             <label>API Key</label>

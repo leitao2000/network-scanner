@@ -1188,7 +1188,8 @@
 
     // 绑定点击
     menu.querySelectorAll('.ctx-menu-item').forEach(btn => {
-      btn.addEventListener('click', () => {
+      btn.addEventListener('click', (ev) => {
+        ev.stopPropagation();
         const label = btn.dataset.action;
         const item = items.find(i => i.label === label);
         hideContextMenu();
