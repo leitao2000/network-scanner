@@ -10,7 +10,12 @@
     "pack": "electron-builder --win",
     "dist": "electron-builder --win --publish=never"
   },
-  "keywords": ["network", "scanner", "electron", "local"],
+  "keywords": [
+    "network",
+    "scanner",
+    "electron",
+    "local"
+  ],
   "author": "TraeDesign",
   "license": "MIT",
   "build": {
@@ -32,11 +37,15 @@
       "target": [
         {
           "target": "nsis",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         },
         {
           "target": "portable",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         }
       ],
       "signAndEditExecutable": false
@@ -55,5 +64,8 @@
   "devDependencies": {
     "electron": "^31.0.0",
     "electron-builder": "^25.0.0"
+  },
+  "dependencies": {
+    "exceljs": "^4.4.0"
   }
 }

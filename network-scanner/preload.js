@@ -17,11 +17,17 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // 端口扫描
   scanPorts: (host, ports) => ipcRenderer.invoke('network:scanPorts', { host, ports }),
 
+  // 单次 Ping
+  pingHost: (host, timeout) => ipcRenderer.invoke('network:pingHost', { host, timeout }),
+
   // 导出结果
   exportResult: (data) => ipcRenderer.invoke('network:export', data),
 
   // 请求管理员提示
   requestElevation: () => ipcRenderer.invoke('app:requestElevation'),
+
+  // 关于软件
+  showAbout: () => ipcRenderer.invoke('app:showAbout'),
 
   // 监听扫描进度
   onScanProgress: (callback) => {

@@ -626,6 +626,26 @@ class Scanner extends EventEmitter {
       }
     }
 
+    // 对在线设备并行扫描常用端口
+    if (!this.shouldStop && devices.length > 0) {
+      this.emit('progress', {
+        phase: 'portscanning',
+        total: ips.length,
+        scanned: ips.length,
+        found: devices.length,
+        elapsed: Date.now() - startTime
+      });
+
+      const portScanPorts = [21, 22, 23, 25, 53, 80, 110, 135, 139, 143, 443, 445, 993, 995, 1900, 3306, 3389, 5353, 8080, 8443, 9100];
+      const portScanResults = await Promise.all(
+        devices.map(device => this.scanPorts(device.ip, portScanPorts))
+      );
+      for (let i = 0; i < devices.length; i++) {
+        devices[i].services = portScanResults[i];
+        this.emit('deviceUpdate', devices[i]);
+      }
+    }
+
     const elapsed = Date.now() - startTime;
 
     this.emit('progress', {
@@ -654,11 +674,21 @@ class Scanner extends EventEmitter {
     if (!Scanner.isValidIPv4(host)) return [];
     const openPorts = [];
 
-    for (const port of ports) {
-      if (this.shouldStop) break;
-      const isOpen = await this.checkPort(host, port, 800);
-      if (isOpen) {
-        openPorts.push(port);
+    // 并行扫描所有端口
+    const results = await Promise.all(
+      ports.map(port => this.checkPort(host, port, 800))
+    );
+
+    for (let i = 0; i < ports.length; i++) {
+      if (results[i]) {
+        const port = ports[i];
+        const info = Scanner.PORT_INFO[port] || {};
+        openPorts.push({
+          port,
+          name: info.name || '未知服务',
+          desc: info.desc || '',
+          risk: info.risk || 'low'
+        });
       }
     }
 
@@ -731,6 +761,35 @@ class Scanner extends EventEmitter {
  * OUI 前缀 → { vendor, category }
  * category: phone / computer / router / iot / camera / virtual / unknown
  */
+
+/**
+ * 常用端口说明表
+ * risk: low / medium / high
+ */
+Scanner.PORT_INFO = {
+  21:   { name: 'FTP',         desc: '文件传输协议，用于上传/下载文件', risk: 'high' },
+  22:   { name: 'SSH',         desc: '安全远程登录与命令执行', risk: 'medium' },
+  23:   { name: 'Telnet',      desc: '明文远程登录，不安全', risk: 'high' },
+  25:   { name: 'SMTP',        desc: '邮件发送服务', risk: 'low' },
+  53:   { name: 'DNS',         desc: '域名解析服务', risk: 'low' },
+  80:   { name: 'HTTP',        desc: 'Web 管理页面或网站服务', risk: 'low' },
+  110:  { name: 'POP3',        desc: '邮件接收服务', risk: 'low' },
+  135:  { name: 'RPC',         desc: 'Windows 远程过程调用', risk: 'medium' },
+  139:  { name: 'NetBIOS',     desc: 'Windows 文件共享/名称服务', risk: 'medium' },
+  143:  { name: 'IMAP',        desc: '邮件接收服务（同步）', risk: 'low' },
+  443:  { name: 'HTTPS',       desc: '加密 Web 管理页面或网站服务', risk: 'low' },
+  445:  { name: 'SMB',         desc: 'Windows 文件/打印机共享，易受攻击', risk: 'high' },
+  993:  { name: 'IMAPS',       desc: '加密邮件接收服务', risk: 'low' },
+  995:  { name: 'POP3S',       desc: '加密邮件接收服务', risk: 'low' },
+  1900: { name: 'SSDP',        desc: 'UPnP 设备发现协议', risk: 'medium' },
+  3306: { name: 'MySQL',       desc: 'MySQL 数据库服务', risk: 'high' },
+  3389: { name: 'RDP',         desc: 'Windows 远程桌面连接', risk: 'medium' },
+  5353: { name: 'mDNS',        desc: '组播 DNS（Bonjour/设备发现）', risk: 'low' },
+  8080: { name: 'HTTP-Alt',    desc: '备用 Web 端口（代理/管理页）', risk: 'low' },
+  8443: { name: 'HTTPS-Alt',   desc: '备用加密 Web 端口', risk: 'low' },
+  9100: { name: 'Printer',     desc: '网络打印机 RAW 打印端口', risk: 'low' }
+};
+
 Scanner.OUI_DB = {
   // ── Apple ──
   'AC:DE:48': { vendor: 'Apple', category: 'phone' },

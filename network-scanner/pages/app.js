@@ -13,12 +13,61 @@
   let searchQuery = '';
   let scanPromise = null;
 
+  // 新增状态
+  let currentDetailDevice = null;
+  let monitorTimer = null;
+  let monitorStats = { success: 0, total: 0, latencies: [], history: [] };
+  let activeAlerts = [];
+
   const modeConfig = {
     quick: { label: '快速', concurrency: 80, timeout: 800 },
     standard: { label: '标准', concurrency: 50, timeout: 1200 },
     deep: { label: '深度', concurrency: 25, timeout: 3000 },
     ai: { label: 'AI', concurrency: 50, timeout: 1500 }
   };
+
+  // 常见端口 -> 服务名映射
+  const PORT_SERVICES = {
+    21: 'FTP', 22: 'SSH', 23: 'Telnet', 25: 'SMTP', 53: 'DNS',
+    80: 'HTTP', 110: 'POP3', 135: 'MS-RPC', 139: 'NetBIOS', 143: 'IMAP',
+    443: 'HTTPS', 445: 'SMB', 993: 'IMAPS', 995: 'POP3S',
+    1433: 'MSSQL', 1521: 'Oracle', 3306: 'MySQL', 3389: 'RDP',
+    5432: 'PostgreSQL', 5900: 'VNC', 6379: 'Redis', 8080: 'HTTP-Alt',
+    8443: 'HTTPS-Alt', 27017: 'MongoDB'
+  };
+  const PORT_DESCRIPTIONS = {
+    21:   '文件传输协议，用于上传/下载文件',
+    22:   '安全远程登录与命令执行',
+    23:   '明文远程登录，不安全',
+    25:   '邮件发送服务',
+    53:   '域名解析服务',
+    80:   'Web 管理页面或网站服务',
+    110:  '邮件接收服务',
+    135:  'Windows 远程过程调用',
+    139:  'Windows 文件共享/名称服务',
+    143:  '邮件接收服务（同步）',
+    443:  '加密 Web 管理页面或网站服务',
+    445:  'Windows 文件/打印机共享，易受攻击',
+    993:  '加密邮件接收服务',
+    995:  '加密邮件接收服务',
+    1433: 'Microsoft SQL Server 数据库',
+    1521: 'Oracle 数据库监听端口',
+    3306: 'MySQL 数据库服务',
+    3389: 'Windows 远程桌面连接',
+    5432: 'PostgreSQL 数据库',
+    5900: 'VNC 远程桌面',
+    6379: 'Redis 缓存数据库',
+    8080: '备用 Web 端口（代理/管理页）',
+    8443: '备用加密 Web 端口',
+    27017: 'MongoDB 文档数据库'
+  };
+  // 高危端口（暴露在局域网即告警）
+  const HIGH_RISK_PORTS = [23, 445, 3389, 5900, 21];
+  const MED_RISK_PORTS = [22, 1433, 1521, 3306, 5432, 6379, 27017];
+
+  const HISTORY_KEY = 'network_scanner_history';
+  const BASELINE_KEY = 'network_scanner_baseline';
+  const HISTORY_MAX = 20;
 
   // DOM refs
   const els = {
@@ -275,6 +324,76 @@
   // ── 网络拓扑图渲染（层级卡片式） ──────────────────
   let topoScale = 1;
 
+  /**
+   * 判断设备是否为网络基础设施（AP/交换机/桥接设备）
+   * 基于真实网络属性：OUI 厂商、开放端口、延迟特征
+   */
+  function isNetworkInfrastructure(device, gatewayIp) {
+    if (!device) return false;
+    // 网关不算中间设备
+    if (gatewayIp && device.ip === gatewayIp) return false;
+    if (device.category === 'router') return false;
+    if (device.type === '本机') return false;
+
+    // 1. 延迟极低（<2ms）且非本机：可能是交换机/桥接设备
+    if (device.latency != null && device.latency > 0 && device.latency < 2 && device.method === 'icmp') {
+      return true;
+    }
+
+    // 2. 开放了网络设备管理端口（23 Telnet / 161 SNMP）且非终端类型
+    const services = device.services || [];
+    const hasMgmtPort = services.some(s => {
+      const p = parseInt(String(s).match(/(\d+)/)?.[1] || '0', 10);
+      return p === 23 || p === 161;
+    });
+    if (hasMgmtPort && device.category !== 'computer' && device.category !== 'phone') {
+      return true;
+    }
+
+    // 3. OUI 属于已知网络设备厂商（非路由器但生产网络设备）
+    if (device.mac) {
+      const oui = device.mac.slice(0, 8).toUpperCase();
+      // TP-Link/D-Link/Netgear/Huawei/小米 等厂商的非路由器设备可能是 AP
+      const infraVendors = ['TP-LINK', 'D-Link', 'Netgear', 'Huawei', 'Xiaomi', 'Cisco', 'H3C', 'Ruijie'];
+      if (device.vendor && infraVendors.some(v => device.vendor.toLowerCase().includes(v.toLowerCase()))) {
+        // 但手机/电脑不算
+        if (device.category !== 'computer' && device.category !== 'phone') {
+          return true;
+        }
+      }
+    }
+
+    return false;
+  }
+
+  /**
+   * 将终端设备按延迟聚类分配到最近的中间设备（AP/交换机）
+   * 返回 [{ parent: infraDevice, children: [devices] }]
+   */
+  function assignToInfrastructures(terminals, infrastructures) {
+    const groups = infrastructures.map(infra => ({ parent: infra, children: [] }));
+    for (const terminal of terminals) {
+      // 找延迟最近的中间设备
+      let bestGroup = null;
+      let bestDiff = Infinity;
+      for (const group of groups) {
+        const infraLatency = group.parent.latency || 0;
+        const termLatency = terminal.latency || 0;
+        // 终端延迟应 >= 中间设备延迟（因为经过中间设备）
+        const diff = Math.abs(termLatency - infraLatency);
+        if (diff < bestDiff) {
+          bestDiff = diff;
+          bestGroup = group;
+        }
+      }
+      if (bestGroup) {
+        bestGroup.children.push(terminal);
+      }
+    }
+    // 过滤空分组
+    return groups.filter(g => g.children.length > 0);
+  }
+
   function renderTopology() {
     const container = document.getElementById('topology-container');
     const canvas = document.getElementById('topology-canvas');
@@ -307,7 +426,17 @@
     setText(document.getElementById('topo-stat-online'), online.toString());
     setText(document.getElementById('topo-stat-services'), services.toString());
 
-    // 层级布局数据
+    // ── 基于真实网络属性构建拓扑 ──────────────────────
+    const gatewayIp = selectedAdapter?.gateway || null;
+
+    // 1. 识别网关：优先 gateway IP，其次 category/type 标记
+    const gateway = allDevices.find(d =>
+      (gatewayIp && d.ip === gatewayIp) ||
+      d.category === 'router' ||
+      d.type?.includes('路由') || d.type?.includes('网关')
+    ) || null;
+
+    // 2. 识别本机
     const localDevice = allDevices.find(d => d.type === '本机') || {
       ip: selectedAdapter?.address || '127.0.0.1',
       type: '本机',
@@ -318,16 +447,40 @@
       services: []
     };
 
-    const gateway = allDevices.find(d => d.type?.includes('路由') || d.type?.includes('网关'));
-    const otherDevices = allDevices.filter(d =>
-      d !== localDevice && d !== gateway && d.type !== '本机'
-    );
+    // 3. 识别中间网络设备（AP/交换机）：非网关但具有网络设备特征
+    //    特征：category 为 iot 且开放 80/443 管理端口，或 OUI 为已知网络设备厂商，
+    //    或延迟极低（<3ms，可能是交换机/桥接设备）
+    const intermediateDevices = [];
+    const terminalSet = new Set();
+    for (const d of allDevices) {
+      if (d === gateway || d === localDevice || d.type === '本机') continue;
+      const isIntermediate = isNetworkInfrastructure(d, gatewayIp);
+      if (isIntermediate) {
+        intermediateDevices.push(d);
+      } else {
+        terminalSet.add(d);
+      }
+    }
 
-    // 定义层级
+    // 4. 终端设备：本机 + 非中间设备
+    const terminalDevices = [localDevice, ...Array.from(terminalSet)];
+
+    // 5. 基于延迟聚类：将终端设备分组（延迟接近的设备可能在同一 AP/交换机下）
+    //    仅当存在中间设备时才分组，否则所有终端直连网关
+    let terminalGroups;
+    if (intermediateDevices.length > 0) {
+      // 有中间设备：按最近延迟分配到对应中间设备
+      terminalGroups = assignToInfrastructures(terminalDevices, intermediateDevices);
+    } else {
+      // 无中间设备：所有终端直连网关（或本机，若无网关）
+      terminalGroups = [{ parent: gateway || localDevice, children: terminalDevices }];
+    }
+
+    // 6. 构建层级
     const layers = [];
-
-    // Layer 0: Internet（虚拟节点）
     const hasGateway = !!gateway;
+
+    // Layer 0: Internet（仅当有网关时）
     if (hasGateway) {
       layers.push([{
         id: 'internet',
@@ -339,23 +492,25 @@
       }]);
     }
 
-    // Layer 1: 网关（如果有）或 本机
+    // Layer 1: 网关（或本机，若无网关）
     if (hasGateway) {
       layers.push([gateway]);
-    } else {
+    } else if (!layers.length) {
       layers.push([localDevice]);
     }
 
-    // Layer 2: 本机（如果有网关）
-    if (hasGateway) {
-      layers.push([localDevice]);
+    // Layer 2: 中间设备（AP/交换机），仅当存在时
+    if (intermediateDevices.length > 0) {
+      layers.push(intermediateDevices);
     }
 
-    // Layer 3+: 其他设备（每行最多 5 个）
-    if (otherDevices.length > 0) {
-      const chunkSize = 5;
-      for (let i = 0; i < otherDevices.length; i += chunkSize) {
-        layers.push(otherDevices.slice(i, i + chunkSize));
+    // Layer 3+: 终端设备分组（每组一层，每层最多 5 个）
+    const chunkSize = 5;
+    for (const group of terminalGroups) {
+      const children = group.children.filter(d => d !== group.parent);
+      if (children.length === 0) continue;
+      for (let i = 0; i < children.length; i += chunkSize) {
+        layers.push(children.slice(i, i + chunkSize));
       }
     }
 
@@ -401,8 +556,8 @@
 
     nodesEl.innerHTML = cardsHtml;
 
-    // 渲染连线
-    renderEdges(edgesEl, nodePositions, layers, canvasWidth, canvasHeight);
+    // 渲染连线（基于真实父子关系）
+    renderEdges(edgesEl, nodePositions, layers, canvasWidth, canvasHeight, hasGateway, terminalGroups, intermediateDevices);
 
     // 初始化拖拽平移
     initTopoPan(container, canvas);
@@ -590,45 +745,81 @@
     `;
   }
 
-  // 渲染连线
-  function renderEdges(svg, positions, layers, canvasWidth, canvasHeight) {
+  // 渲染连线（基于真实父子关系）
+  function renderEdges(svg, positions, layers, canvasWidth, canvasHeight, hasGateway, terminalGroups, intermediateDevices) {
     if (!svg) return;
     svg.setAttribute('width', canvasWidth);
     svg.setAttribute('height', canvasHeight);
     svg.setAttribute('viewBox', `0 0 ${canvasWidth} ${canvasHeight}`);
 
     const parts = [];
+    const nodeHeight = 90;
 
-    // 连线规则：Internet -> 网关 -> 本机 -> 其他设备
-    for (let i = 0; i < layers.length - 1; i++) {
-      const currentLayer = layers[i];
-      const nextLayer = layers[i + 1];
+    // 辅助：画一条贝塞尔曲线
+    function drawEdge(srcPos, dstPos, isDashed, color, opacity) {
+      const x1 = srcPos.x;
+      const y1 = srcPos.top + nodeHeight;
+      const x2 = dstPos.x;
+      const y2 = dstPos.top;
+      const midY = (y1 + y2) / 2;
+      const d = `M ${x1} ${y1} C ${x1} ${midY}, ${x2} ${midY}, ${x2} ${y2}`;
+      parts.push(`<path d="${d}" fill="none" stroke="${color}" stroke-width="1.5" stroke-dasharray="${isDashed ? '5 4' : '0'}" opacity="${opacity}"/>`);
+    }
 
-      for (const srcDevice of currentLayer) {
-        const srcKey = srcDevice.isInternet ? 'internet' : (srcDevice.ip || '');
-        const srcPos = positions[srcKey];
-        if (!srcPos) continue;
+    function getPos(device) {
+      if (!device) return null;
+      const key = device.isInternet ? 'internet' : (device.ip || '');
+      return positions[key] || null;
+    }
 
-        for (const dstDevice of nextLayer) {
-          const dstKey = dstDevice.ip || '';
-          const dstPos = positions[dstKey];
-          if (!dstPos) continue;
+    // 1. Internet → 网关（虚线）
+    if (hasGateway) {
+      const internetPos = positions['internet'];
+      const gatewayPos = getPos(layers[1] && layers[1][0]);
+      if (internetPos && gatewayPos) {
+        drawEdge(internetPos, gatewayPos, true, 'var(--scanner-ink-3)', 0.5);
+      }
+    }
 
-          // 从源卡片底部中心到目标卡片顶部中心
-          const x1 = srcPos.x;
-          const y1 = srcPos.top + 90; // nodeHeight
-          const x2 = dstPos.x;
-          const y2 = dstPos.top;
+    // 2. 网关 → 中间设备（如果有中间设备层）
+    if (intermediateDevices && intermediateDevices.length > 0 && hasGateway) {
+      const gatewayDevice = layers[1] && layers[1][0];
+      const gatewayPos = getPos(gatewayDevice);
+      for (const infra of intermediateDevices) {
+        const infraPos = getPos(infra);
+        if (gatewayPos && infraPos) {
+          drawEdge(gatewayPos, infraPos, false, 'var(--scanner-primary)', 0.4);
+        }
+      }
+    }
 
-          // 从 Internet 到网关用虚线，其他用实线
-          const isDashed = srcDevice.isInternet;
-          const color = isDashed ? 'var(--scanner-ink-3)' : 'var(--scanner-primary)';
-
-          // 贝塞尔曲线
-          const midY = (y1 + y2) / 2;
-          const d = `M ${x1} ${y1} C ${x1} ${midY}, ${x2} ${midY}, ${x2} ${y2}`;
-
-          parts.push(`<path d="${d}" fill="none" stroke="${color}" stroke-width="1.5" stroke-dasharray="${isDashed ? '5 4' : '0'}" opacity="${isDashed ? 0.5 : 0.4}"/>`);
+    // 3. 基于真实父子关系连线：parent → children
+    if (terminalGroups) {
+      for (const group of terminalGroups) {
+        const parentPos = getPos(group.parent);
+        if (!parentPos) continue;
+        for (const child of group.children) {
+          if (child === group.parent) continue;
+          const childPos = getPos(child);
+          if (!childPos) continue;
+          // 中间设备的下级用 info 色，网关直连用 primary 色
+          const isInfraChild = intermediateDevices && intermediateDevices.includes(group.parent);
+          const color = isInfraChild ? 'var(--scanner-state-info)' : 'var(--scanner-primary)';
+          drawEdge(parentPos, childPos, false, color, 0.4);
+        }
+      }
+    } else {
+      // 兜底：相邻层连线（无分组信息时）
+      for (let i = 0; i < layers.length - 1; i++) {
+        for (const src of layers[i]) {
+          const srcPos = getPos(src);
+          if (!srcPos) continue;
+          for (const dst of layers[i + 1]) {
+            const dstPos = getPos(dst);
+            if (!dstPos) continue;
+            const isDashed = src.isInternet;
+            drawEdge(srcPos, dstPos, isDashed, isDashed ? 'var(--scanner-ink-3)' : 'var(--scanner-primary)', isDashed ? 0.5 : 0.4);
+          }
         }
       }
     }
@@ -744,6 +935,10 @@
         renderTopology();
         setText(els.scanFound, devices.length.toString());
         setText(els.statTime, (result.elapsed / 1000).toFixed(1));
+        // 安全告警检测 + 历史记录保存
+        activeAlerts = detectAlerts(devices);
+        updateAlertBadge();
+        saveScanHistory(cidr, devices, result.elapsed);
       } else {
         alert(`扫描失败: ${result.error}`);
       }
@@ -762,15 +957,52 @@
   }
 
   async function exportResult() {
+    if (devices.length === 0) {
+      showToast('暂无数据，请先执行扫描');
+      return;
+    }
+
+    // 显示格式选择弹窗
+    const overlay = document.getElementById('export-modal-overlay');
+    const closeBtn = document.getElementById('export-modal-close');
+    const formatBtns = overlay.querySelectorAll('.export-format-btn');
+
+    overlay.style.display = 'flex';
+    lucide.createIcons();
+
+    const chosen = await new Promise(resolve => {
+      const cleanup = () => {
+        closeBtn.removeEventListener('click', onCancel);
+        overlay.removeEventListener('click', onOverlayClick);
+        formatBtns.forEach(btn => btn.removeEventListener('click', onSelect));
+      };
+      const onCancel = () => { cleanup(); resolve(null); };
+      const onOverlayClick = (e) => { if (e.target === overlay) { cleanup(); resolve(null); } };
+      const onSelect = (e) => {
+        cleanup();
+        const btn = e.currentTarget;
+        resolve(btn.dataset.format);
+      };
+
+      closeBtn.addEventListener('click', onCancel);
+      overlay.addEventListener('click', onOverlayClick);
+      formatBtns.forEach(btn => btn.addEventListener('click', onSelect));
+    });
+
+    overlay.style.display = 'none';
+
+    if (!chosen) return; // 用户取消
+
     const result = await api.exportResult({
+      format: chosen,
       cidr: selectedAdapter?.cidr || '',
       devices,
       elapsed: Date.now() - scanStartTime
     });
     if (result.success) {
-      // exported
+      showToast(`报告已导出 (${chosen.toUpperCase()})`);
     } else if (!result.canceled) {
-      alert(`导出失败: ${result.error}`);
+      showToast(`导出失败: ${result.error}`);
     }
   }
 
@@ -784,6 +1016,8 @@
     const ipValue = document.getElementById('detail-ip-value');
     const ipMeta = document.getElementById('detail-ip-meta');
     const body = document.getElementById('detail-body');
+
+    currentDetailDevice = device;
 
     const icon = getDeviceIcon(device);
     const isLocal = device.type === '本机';
@@ -817,8 +1051,7 @@
       { label: '设备分类', value: categoryLabel },
       { label: '所属网段', value: selectedAdapter?.cidr || '-', mono: true },
       { label: '探测方式', value: methodLabel },
-      { label: '延迟', value: device.latency != null ? `${device.latency} ms` : '-', mono: true },
-      { label: '服务端口', value: device.services && device.services.length ? device.services.join(', ') : '无' }
+      { label: '延迟', value: device.latency != null ? `${device.latency} ms` : '-', mono: true }
     ];
 
     body.innerHTML = rows.map(row => {
@@ -837,6 +1070,60 @@
       `;
     }).join('');
 
+    // 显示该设备的告警信息
+    const deviceAlerts = activeAlerts.filter(a => a.ip === device.ip);
+    if (deviceAlerts.length > 0) {
+      const alertHtml = deviceAlerts.map(a => {
+        const cls = a.level === 'high' ? 'high' : 'med';
+        const icon = a.level === 'high' ? 'alert-triangle' : 'alert-circle';
+        return `<span class="alert-chip ${cls}"><i data-lucide="${icon}" style="width:11px; height:11px;"></i>${a.title}</span>`;
+      }).join('');
+      body.insertAdjacentHTML('beforeend', `
+        <div class="drawer-row" style="flex-direction:column; align-items:flex-start; gap:6px;">
+          <span class="label">安全告警</span>
+          <div style="text-align:left; width:100%;">${alertHtml}</div>
+        </div>
+      `);
+    }
+
+    // 端口扫描结果
+    const svcs = device.services || [];
+    if (svcs.length > 0) {
+      const riskColors = { high: 'var(--scanner-state-error)', medium: 'var(--scanner-state-warning)', low: 'var(--scanner-state-success)' };
+      const riskBg = { high: 'var(--scanner-state-error-bg)', medium: 'var(--scanner-state-warning-bg)', low: 'var(--scanner-state-success-bg)' };
+      const portListHtml = svcs.map(s => {
+        const rc = riskColors[s.risk] || riskColors.low;
+        const rb = riskBg[s.risk] || riskBg.low;
+        return `
+          <div style="display:flex; align-items:flex-start; gap:10px; padding:10px 0; border-bottom:1px solid var(--scanner-border);">
+            <div style="display:flex; flex-direction:column; align-items:center; gap:2px; min-width:48px;">
+              <span class="scanner-mono" style="font-size:14px; font-weight:700; color:var(--scanner-ink);">${s.port}</span>
+              <span style="font-size:9px; padding:1px 5px; border-radius:3px; background:${rb}; color:${rc}; font-weight:500;">${s.risk === 'high' ? '高危' : s.risk === 'medium' ? '中危' : '低危'}</span>
+            </div>
+            <div style="flex:1; min-width:0;">
+              <div style="font-size:12px; font-weight:600; color:var(--scanner-ink); margin-bottom:2px;">${s.name}</div>
+              <div style="font-size:11px; color:var(--scanner-ink-2);">${s.desc || ''}</div>
+            </div>
+          </div>
+        `;
+      }).join('');
+      body.insertAdjacentHTML('beforeend', `
+        <div style="margin-top:16px;">
+          <div style="font-size:12px; font-weight:600; color:var(--scanner-ink-2); margin-bottom:4px;">开放端口 (${svcs.length})</div>
+          ${portListHtml}
+        </div>
+      `);
+    } else {
+      body.insertAdjacentHTML('beforeend', `
+        <div style="margin-top:16px; padding:12px; border-radius:8px; background:var(--scanner-muted); text-align:center;">
+          <span style="font-size:12px; color:var(--scanner-ink-3);">未发现开放端口</span>
+        </div>
+      `);
+    }
+
+    // 重置操作面板
+    resetActionPanels();
+
     // 显示 overlay 并触发动画
     overlay.style.display = 'flex';
     // 短暂延迟让 CSS transition 生效
@@ -848,6 +1135,13 @@
     lucide.createIcons();
   }
 
+  function resetActionPanels() {
+    const pingResult = document.getElementById('ping-result');
+    const portscanResult = document.getElementById('portscan-result');
+    if (pingResult) pingResult.innerHTML = '<div class="port-empty">点击"开始 Ping"进行连通性测试</div>';
+    if (portscanResult) portscanResult.innerHTML = '<div class="port-empty">点击"扫描常用端口"开始检测</div>';
+  }
+
   function hideDeviceDetail() {
     const overlay = document.getElementById('device-detail-overlay');
     const drawer = document.getElementById('device-detail-drawer');
@@ -857,10 +1151,490 @@
     }, 260);
   }
 
+  // ── 右键上下文菜单 ──────────────────────────────
+  function showContextMenu(device, x, y) {
+    const menu = document.getElementById('ctx-menu');
+    const isLocal = device.type === '本机';
+    const items = [
+      { icon: 'activity', label: 'Ping 测试（5 次）', action: () => { showDeviceDetail(device); runPingTest(device); } },
+      { icon: 'git-branch', label: '端口扫描', action: () => { showDeviceDetail(device); runPortScan(device, 'common'); } },
+      { icon: 'radio', label: '连续监控', action: () => startMonitor(device) },
+      { divider: true },
+      { icon: 'copy', label: '复制 IP 地址', action: () => copyToClipboard(device.ip) },
+      { icon: 'copy', label: '复制 MAC 地址', action: () => copyToClipboard(device.mac || '') },
+      { divider: true },
+      { icon: 'external-link', label: '查看详情', action: () => showDeviceDetail(device) }
+    ];
+    if (isLocal) {
+      // 本机不支持连续监控
+      items.splice(2, 1);
+    }
+    menu.innerHTML = items.map(it => {
+      if (it.divider) return '<div class="ctx-menu-divider"></div>';
+      return `<button class="ctx-menu-item" data-action="${it.label}"><i data-lucide="${it.icon}"></i>${it.label}</button>`;
+    }).join('');
+    menu.style.display = 'block';
+    // 定位（避免溢出窗口）
+    const rect = menu.getBoundingClientRect();
+    let left = x, top = y;
+    if (left + rect.width > window.innerWidth) left = window.innerWidth - rect.width - 8;
+    if (top + rect.height > window.innerHeight) top = window.innerHeight - rect.height - 8;
+    menu.style.left = left + 'px';
+    menu.style.top = top + 'px';
+    lucide.createIcons();
+
+    // 绑定点击
+    menu.querySelectorAll('.ctx-menu-item').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const label = btn.dataset.action;
+        const item = items.find(i => i.label === label);
+        hideContextMenu();
+        if (item && item.action) item.action();
+      });
+    });
+  }
+
+  function hideContextMenu() {
+    const menu = document.getElementById('ctx-menu');
+    if (menu) menu.style.display = 'none';
+  }
+
+  function copyToClipboard(text) {
+    if (!text) { showToast('内容为空，无法复制'); return; }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(
+        () => showToast(`已复制: ${text}`),
+        () => fallbackCopy(text)
+      );
+    } else {
+      fallbackCopy(text);
+    }
+  }
+
+  function fallbackCopy(text) {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    try { document.execCommand('copy'); showToast(`已复制: ${text}`); }
+    catch { showToast('复制失败'); }
+    document.body.removeChild(ta);
+  }
+
+  function showToast(msg) {
+    let toast = document.getElementById('scanner-toast');
+    if (!toast) {
+      toast = document.createElement('div');
+      toast.id = 'scanner-toast';
+      toast.style.cssText = 'position:fixed; bottom:24px; left:50%; transform:translateX(-50%); background:var(--scanner-ink); color:#fff; padding:10px 20px; border-radius:8px; font-size:13px; z-index:200; box-shadow:var(--scanner-shadow-3); opacity:0; transition:opacity 0.2s;';
+      document.body.appendChild(toast);
+    }
+    toast.textContent = msg;
+    toast.style.opacity = '1';
+    clearTimeout(toast._timer);
+    toast._timer = setTimeout(() => { toast.style.opacity = '0'; }, 2000);
+  }
+
+  // ── Ping 连通性测试 ──────────────────────────────
+  async function runPingTest(device) {
+    const resultEl = document.getElementById('ping-result');
+    const runBtn = document.getElementById('ping-run-btn');
+    if (!resultEl || !device) return;
+    runBtn.disabled = true;
+    resultEl.innerHTML = '<div class="port-empty">正在测试...</div>';
+
+    const results = [];
+    for (let i = 0; i < 5; i++) {
+      try {
+        const r = await api.pingHost(device.ip, 2000);
+        results.push({ seq: i + 1, alive: !!r.alive, latency: r.latency });
+      } catch {
+        results.push({ seq: i + 1, alive: false, latency: null });
+      }
+      // 实时渲染进度
+      renderPingResult(resultEl, results, true);
+    }
+    renderPingResult(resultEl, results, false);
+    runBtn.disabled = false;
+  }
+
+  function renderPingResult(el, results, pending) {
+    const okCount = results.filter(r => r.alive).length;
+    const latencies = results.filter(r => r.alive && r.latency != null).map(r => r.latency);
+    const avg = latencies.length ? (latencies.reduce((a, b) => a + b, 0) / latencies.length).toFixed(1) : '-';
+    const loss = results.length ? (((results.length - okCount) / results.length) * 100).toFixed(0) : '0';
+    // 抖动：相邻延迟差值的平均
+    let jitter = '-';
+    if (latencies.length >= 2) {
+      let sum = 0;
+      for (let i = 1; i < latencies.length; i++) sum += Math.abs(latencies[i] - latencies[i - 1]);
+      jitter = (sum / (latencies.length - 1)).toFixed(1);
+    }
+    const grid = results.map(r => {
+      const cls = r.alive ? 'ok' : 'fail';
+      const val = r.alive ? (r.latency != null ? r.latency + 'ms' : 'OK') : '超时';
+      return `<div class="ping-cell ${cls}"><span class="seq">#${r.seq}</span>${val}</div>`;
+    }).join('');
+    const pendingHint = pending ? `<div class="action-panel-hint" style="margin-top:8px;">测试进行中... 已完成 ${results.length}/5</div>` : '';
+    el.innerHTML = `
+      <div class="ping-grid">${grid}</div>
+      <div class="ping-summary" style="margin-top:8px;">
+        <span>成功 <b>${okCount}/${results.length}</b></span>
+        <span>丢包率 <b>${loss}%</b></span>
+        <span>平均 <b>${avg} ms</b></span>
+        <span>抖动 <b>${jitter} ms</b></span>
+      </div>
+      ${pendingHint}
+    `;
+  }
+
+  // ── 端口扫描 ──────────────────────────────────
+  async function runPortScan(device, mode) {
+    const resultEl = document.getElementById('portscan-result');
+    const runBtn = document.getElementById('portscan-run-btn');
+    const fullBtn = document.getElementById('portscan-full-btn');
+    if (!resultEl || !device) return;
+    runBtn.disabled = true;
+    fullBtn.disabled = true;
+    resultEl.innerHTML = '<div class="port-empty"><div class="action-panel-hint" style="margin-bottom:6px;">正在扫描端口，请稍候...</div></div>';
+
+    let ports;
+    if (mode === 'full') {
+      ports = [];
+      for (let p = 1; p <= 1024; p++) ports.push(p);
+    } else {
+      ports = Object.keys(PORT_SERVICES).map(Number);
+    }
+
+    try {
+      const r = await api.scanPorts(device.ip, ports);
+      if (r.success) {
+        renderPortScanResult(resultEl, r.openPorts || []);
+      } else {
+        resultEl.innerHTML = `<div class="port-empty" style="color:var(--scanner-state-error);">扫描失败: ${r.error || '未知错误'}</div>`;
+      }
+    } catch (err) {
+      resultEl.innerHTML = `<div class="port-empty" style="color:var(--scanner-state-error);">扫描异常: ${err.message}</div>`;
+    } finally {
+      runBtn.disabled = false;
+      fullBtn.disabled = false;
+    }
+  }
+
+  function renderPortScanResult(el, openPorts) {
+    if (!openPorts.length) {
+      el.innerHTML = '<div class="port-empty">未发现开放端口</div>';
+      return;
+    }
+    const items = openPorts.map(item => {
+      const port = typeof item === 'object' ? item.port : item;
+      const svcName = typeof item === 'object' ? item.name : (PORT_SERVICES[port] || '未知');
+      const svcDesc = typeof item === 'object' ? (item.desc || '') : (PORT_DESCRIPTIONS[port] || '');
+      const riskLevel = typeof item === 'object' ? item.risk : (HIGH_RISK_PORTS.includes(port) ? 'high' : MED_RISK_PORTS.includes(port) ? 'medium' : '');
+      const riskLabel = riskLevel === 'high' ? '高危' : riskLevel === 'medium' ? '中危' : '低危';
+      const riskCls = riskLevel === 'high' ? 'high' : riskLevel === 'medium' ? 'med' : '';
+      let risk = riskCls ? `<span class="port-risk ${riskCls}">${riskLabel}</span>` : '';
+      return `
+        <div class="port-item" style="flex-direction:column; align-items:flex-start; gap:4px; padding:10px 8px;">
+          <div style="display:flex; align-items:center; gap:8px; width:100%;">
+            <span class="port-num">${port}</span>
+            <span class="port-svc">${svcName}</span>
+            ${risk}
+          </div>
+          ${svcDesc ? `<div style="font-size:11px; color:var(--scanner-ink-3); padding-left:2px;">${svcDesc}</div>` : ''}
+        </div>
+      `;
+    }).join('');
+    el.innerHTML = `<div class="port-list">${items}</div><div class="action-panel-hint" style="margin-top:6px;">共发现 ${openPorts.length} 个开放端口</div>`;
+  }
+
+  // ── 连续监控 ──────────────────────────────────
+  function startMonitor(device) {
+    stopMonitor();
+    const float = document.getElementById('monitor-float');
+    if (!float || !device) return;
+    monitorStats = { success: 0, total: 0, latencies: [], history: [] };
+    document.getElementById('monitor-ip').textContent = device.ip;
+    renderMonitor();
+    float.style.display = 'block';
+    lucide.createIcons();
+
+    const tick = async () => {
+      try {
+        const r = await api.pingHost(device.ip, 2000);
+        monitorStats.total++;
+        if (r.alive) {
+          monitorStats.success++;
+          monitorStats.latencies.push(r.latency || 0);
+          monitorStats.history.push({ alive: true, latency: r.latency });
+        } else {
+          monitorStats.history.push({ alive: false, latency: null });
+        }
+      } catch {
+        monitorStats.total++;
+        monitorStats.history.push({ alive: false, latency: null });
+      }
+      // 保留最近 30 个点
+      if (monitorStats.history.length > 30) monitorStats.history.shift();
+      if (monitorStats.latencies.length > 30) monitorStats.latencies.shift();
+      renderMonitor();
+    };
+    tick();
+    monitorTimer = setInterval(tick, 3000);
+  }
+
+  function stopMonitor() {
+    if (monitorTimer) { clearInterval(monitorTimer); monitorTimer = null; }
+    const float = document.getElementById('monitor-float');
+    if (float) float.style.display = 'none';
+  }
+
+  function renderMonitor() {
+    const last = monitorStats.history[monitorStats.history.length - 1];
+    const statusEl = document.getElementById('monitor-status');
+    const latencyEl = document.getElementById('monitor-latency');
+    if (last && last.alive) {
+      statusEl.innerHTML = `<span class="w-2 h-2 rounded-full" style="background:var(--scanner-state-success);"></span><span style="color:var(--scanner-state-success); font-weight:600;">在线</span><span style="color:var(--scanner-ink-3);">·</span><span style="color:var(--scanner-ink-2); font-family:var(--scanner-font-mono);" id="monitor-latency">${last.latency != null ? last.latency : 0} ms</span>`;
+    } else {
+      statusEl.innerHTML = `<span class="w-2 h-2 rounded-full" style="background:var(--scanner-state-error);"></span><span style="color:var(--scanner-state-error); font-weight:600;">离线</span><span style="color:var(--scanner-ink-3);">·</span><span style="color:var(--scanner-ink-2);" id="monitor-latency">超时</span>`;
+    }
+    document.getElementById('monitor-success').textContent = monitorStats.success;
+    document.getElementById('monitor-total').textContent = monitorStats.total;
+    const avg = monitorStats.latencies.length ? (monitorStats.latencies.reduce((a, b) => a + b, 0) / monitorStats.latencies.length).toFixed(0) : '-';
+    document.getElementById('monitor-avg').textContent = avg === '-' ? '-' : avg + 'ms';
+    const loss = monitorStats.total ? (((monitorStats.total - monitorStats.success) / monitorStats.total) * 100).toFixed(0) : '0';
+    document.getElementById('monitor-loss').textContent = loss + '%';
+    // 图表
+    const chart = document.getElementById('monitor-chart');
+    const maxLat = Math.max(...monitorStats.latencies, 1);
+    chart.innerHTML = monitorStats.history.map(h => {
+      if (!h.alive) return '<div class="bar fail" style="height:100%;"></div>';
+      const heightPct = Math.max(8, (h.latency / maxLat) * 100);
+      return `<div class="bar" style="height:${heightPct}%;"></div>`;
+    }).join('');
+  }
+
+  // ── 告警检测 ──────────────────────────────────
+  function detectAlerts(devs) {
+    const alerts = [];
+    const baseline = loadBaseline();
+    const knownMacs = new Set(baseline.map(b => b.mac).filter(Boolean));
+
+    for (const d of devs) {
+      // 1. 可疑设备：MAC 缺失
+      if (!d.mac || d.mac === '00:00:00:00:00:00') {
+        alerts.push({ ip: d.ip, level: 'med', title: 'MAC 地址缺失', type: 'suspect' });
+      }
+      // 2. 可疑设备：未知类型/厂商
+      if (d.type === '在线设备' || !d.type) {
+        alerts.push({ ip: d.ip, level: 'med', title: '设备类型未知', type: 'suspect' });
+      }
+      // 3. 高危端口
+      if (d.services && Array.isArray(d.services)) {
+        for (const svc of d.services) {
+          if (svc && typeof svc === 'object' && svc.risk === 'high') {
+            alerts.push({ ip: d.ip, level: 'high', title: `高危端口开放: ${svc.port} (${svc.name})`, type: 'port' });
+          }
+        }
+      }
+      // 4. 未授权设备：不在基线白名单中（仅当基线存在时检测）
+      if (baseline.length > 0 && d.mac && !knownMacs.has(d.mac) && d.type !== '本机') {
+        alerts.push({ ip: d.ip, level: 'high', title: '未授权设备（不在基线中）', type: 'unauthorized' });
+      }
+    }
+    return alerts;
+  }
+
+  function updateAlertBadge() {
+    const badge = document.getElementById('alert-count-badge');
+    if (!badge) return;
+    const highCount = activeAlerts.filter(a => a.level === 'high').length;
+    if (activeAlerts.length > 0) {
+      badge.style.display = 'flex';
+      badge.textContent = activeAlerts.length;
+      badge.style.background = highCount > 0 ? 'var(--scanner-state-error)' : 'var(--scanner-state-warning)';
+    } else {
+      badge.style.display = 'none';
+    }
+  }
+
+  function showAlertsPanel() {
+    if (activeAlerts.length === 0) {
+      showToast('当前无安全告警');
+      return;
+    }
+    // 复用历史面板结构显示告警
+    const panel = document.getElementById('history-panel');
+    const list = document.getElementById('history-list');
+    const header = panel.querySelector('.history-panel-header h3');
+    header.textContent = `安全告警 (${activeAlerts.length})`;
+    list.innerHTML = activeAlerts.map(a => {
+      const cls = a.level === 'high' ? 'high' : 'med';
+      const color = a.level === 'high' ? 'var(--scanner-state-error)' : 'var(--scanner-state-warning)';
+      return `
+        <div class="history-item" style="border-left:3px solid ${color};">
+          <div class="history-item-top">
+            <span class="history-item-time scanner-mono">${a.ip}</span>
+            <span class="alert-chip ${cls}">${a.level === 'high' ? '高危' : '中危'}</span>
+          </div>
+          <div class="history-item-meta">${a.title}</div>
+          <div class="history-item-sub">类型: ${a.type}</div>
+        </div>
+      `;
+    }).join('');
+    panel.style.display = 'flex';
+    lucide.createIcons();
+  }
+
+  // ── 扫描历史记录（localStorage） ──────────────────
+  function saveScanHistory(cidr, devs, elapsed) {
+    try {
+      const history = loadHistory();
+      const deviceSummary = devs.map(d => ({
+        ip: d.ip,
+        mac: d.mac || null,
+        hostname: d.hostname || null,
+        type: d.type || null,
+        status: d.status || null,
+        latency: d.latency != null ? d.latency : null,
+        services: d.services || []
+      }));
+      history.unshift({
+        id: Date.now(),
+        time: Date.now(),
+        cidr: cidr || '',
+        elapsed: elapsed || 0,
+        deviceCount: devs.length,
+        onlineCount: devs.filter(d => d.status === '在线').length,
+        devices: deviceSummary
+      });
+      if (history.length > HISTORY_MAX) history.length = HISTORY_MAX;
+      localStorage.setItem(HISTORY_KEY, JSON.stringify(history));
+      // 首次扫描建立基线
+      const baseline = loadBaseline();
+      if (baseline.length === 0 && devs.length > 0) {
+        const newBaseline = devs.filter(d => d.mac).map(d => ({ ip: d.ip, mac: d.mac, type: d.type }));
+        localStorage.setItem(BASELINE_KEY, JSON.stringify(newBaseline));
+      }
+    } catch (e) {
+      console.warn('保存历史失败:', e);
+    }
+  }
+
+  function loadHistory() {
+    try {
+      const raw = localStorage.getItem(HISTORY_KEY);
+      return raw ? JSON.parse(raw) : [];
+    } catch { return []; }
+  }
+
+  function loadBaseline() {
+    try {
+      const raw = localStorage.getItem(BASELINE_KEY);
+      return raw ? JSON.parse(raw) : [];
+    } catch { return []; }
+  }
+
+  function showHistoryPanel() {
+    const panel = document.getElementById('history-panel');
+    const list = document.getElementById('history-list');
+    const header = panel.querySelector('.history-panel-header h3');
+    header.textContent = '扫描历史记录';
+    const history = loadHistory();
+    if (history.length === 0) {
+      list.innerHTML = '<div class="history-empty">暂无扫描历史<br><span style="font-size:11px;">完成一次扫描后会自动保存</span></div>';
+    } else {
+      list.innerHTML = history.map(h => {
+        const d = new Date(h.time);
+        const timeStr = `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}:${String(d.getSeconds()).padStart(2, '0')}`;
+        const elapsedStr = h.elapsed ? (h.elapsed / 1000).toFixed(1) + 's' : '-';
+        return `
+          <div class="history-item" data-history-id="${h.id}">
+            <div class="history-item-top">
+              <span class="history-item-time">${timeStr}</span>
+              <span class="history-item-meta">${h.onlineCount}/${h.deviceCount} 在线 · ${elapsedStr}</span>
+            </div>
+            <div class="history-item-sub">${h.cidr} · ${h.deviceCount} 台设备</div>
+          </div>
+        `;
+      }).join('');
+      // 绑定点击查看详情
+      list.querySelectorAll('.history-item').forEach(item => {
+        item.addEventListener('click', () => {
+          const id = parseInt(item.dataset.historyId, 10);
+          const rec = history.find(h => h.id === id);
+          if (rec) showHistoryDetail(rec);
+        });
+      });
+    }
+    panel.style.display = 'flex';
+    lucide.createIcons();
+  }
+
+  function showHistoryDetail(rec) {
+    const panel = document.getElementById('history-panel');
+    const list = document.getElementById('history-list');
+    const header = panel.querySelector('.history-panel-header h3');
+    const d = new Date(rec.time);
+    const timeStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+    header.textContent = '历史详情';
+    list.innerHTML = `
+      <div style="padding:12px 14px; border-bottom:1px solid var(--scanner-border);">
+        <div style="font-size:13px; font-weight:600; color:var(--scanner-ink); margin-bottom:6px;">${timeStr}</div>
+        <div style="font-size:11px; color:var(--scanner-ink-2); display:flex; gap:12px; flex-wrap:wrap;">
+          <span>网段 <b class="scanner-mono">${rec.cidr}</b></span>
+          <span>设备 <b>${rec.deviceCount}</b></span>
+          <span>在线 <b style="color:var(--scanner-state-success);">${rec.onlineCount}</b></span>
+          <span>耗时 <b>${(rec.elapsed / 1000).toFixed(1)}s</b></span>
+        </div>
+      </div>
+      <div style="padding:8px;">
+        ${(rec.devices || []).map(dev => {
+          const statusColor = dev.status === '在线' ? 'var(--scanner-state-success)' : 'var(--scanner-ink-3)';
+          return `
+            <div class="history-item" style="cursor:default;">
+              <div class="history-item-top">
+                <span class="history-item-time scanner-mono">${dev.ip}</span>
+                <span style="display:inline-flex; align-items:center; gap:4px; font-size:11px; color:${statusColor};">
+                  <span class="w-1.5 h-1.5 rounded-full" style="background:${statusColor};"></span>${dev.status || '-'}
+                </span>
+              </div>
+              <div class="history-item-meta">${dev.hostname || dev.type || '-'} · ${dev.mac ? dev.mac.toUpperCase() : 'MAC 缺失'}</div>
+              ${dev.latency != null ? `<div class="history-item-sub">延迟 ${dev.latency}ms${dev.services && dev.services.length ? ' · 服务 ' + dev.services.map(s => typeof s === 'object' ? s.name : s).join(', ') : ''}</div>` : ''}
+            </div>
+          `;
+        }).join('')}
+      </div>
+      <div style="padding:8px 14px; border-top:1px solid var(--scanner-border);">
+        <button class="action-btn" id="history-back-btn" style="width:100%; justify-content:center;">
+          <i data-lucide="arrow-left"></i> 返回历史列表
+        </button>
+      </div>
+    `;
+    document.getElementById('history-back-btn').addEventListener('click', showHistoryPanel);
+    lucide.createIcons();
+  }
+
+  function clearHistory() {
+    if (!confirm('确定清空所有扫描历史记录吗？此操作不可撤销。')) return;
+    localStorage.removeItem(HISTORY_KEY);
+    showToast('历史记录已清空');
+    showHistoryPanel();
+  }
+
   function bindEvents() {
     els.btnStart.addEventListener('click', startScan);
     els.btnStop.addEventListener('click', stopScan);
     els.btnExport.addEventListener('click', exportResult);
+
+    // 点击软件名称显示关于对话框
+    document.getElementById('app-about')?.addEventListener('click', () => {
+      if (api && api.showAbout) {
+        api.showAbout();
+      }
+    });
 
     document.querySelectorAll('.mode-btn').forEach(btn => {
       btn.addEventListener('click', () => {
@@ -962,6 +1736,8 @@
       if (scanLoadingDetail) {
         if (data.phase === 'started') {
           scanLoadingDetail.textContent = '正在初始化...';
+        } else if (data.phase === 'portscanning') {
+          scanLoadingDetail.textContent = `正在扫描开放端口... · 发现 ${data.found} 台在线`;
         } else if (data.phase === 'completed') {
           scanLoadingDetail.textContent = '扫描完成';
         } else {
@@ -979,6 +1755,16 @@
       if (device) showDeviceDetail(device);
     });
 
+    // 设备行右键 -> 上下文菜单
+    els.deviceTableBody.addEventListener('contextmenu', (e) => {
+      const row = e.target.closest('tr[data-ip]');
+      if (!row) return;
+      e.preventDefault();
+      const ip = row.dataset.ip;
+      const device = devices.find(d => d.ip === ip);
+      if (device) showContextMenu(device, e.clientX, e.clientY);
+    });
+
     // 拓扑图节点点击 -> 显示详情
     document.getElementById('topology-nodes').addEventListener('click', (e) => {
       const card = e.target.closest('.topo-node-card');
@@ -987,6 +1773,77 @@
       const device = devices.find(d => d.ip === ip);
       if (device) showDeviceDetail(device);
     });
+
+    // 拓扑图节点右键 -> 上下文菜单
+    document.getElementById('topology-nodes').addEventListener('contextmenu', (e) => {
+      const card = e.target.closest('.topo-node-card');
+      if (!card) return;
+      e.preventDefault();
+      const ip = card.dataset.topoIp;
+      const device = devices.find(d => d.ip === ip);
+      if (device) showContextMenu(device, e.clientX, e.clientY);
+    });
+
+    // 全局点击关闭右键菜单
+    document.addEventListener('click', (e) => {
+      if (!e.target.closest('.ctx-menu')) hideContextMenu();
+    });
+    document.addEventListener('contextmenu', (e) => {
+      if (!e.target.closest('tr[data-ip]') && !e.target.closest('.topo-node-card')) {
+        hideContextMenu();
+      }
+    });
+
+    // 操作面板折叠
+    document.querySelectorAll('.action-panel-header').forEach(header => {
+      header.addEventListener('click', () => {
+        const panel = header.closest('.action-panel');
+        if (panel) panel.classList.toggle('collapsed');
+      });
+    });
+
+    // Ping 测试按钮
+    document.getElementById('ping-run-btn')?.addEventListener('click', () => {
+      if (currentDetailDevice) runPingTest(currentDetailDevice);
+    });
+    document.getElementById('ping-clear-btn')?.addEventListener('click', () => {
+      resetActionPanels();
+    });
+
+    // 端口扫描按钮
+    document.getElementById('portscan-run-btn')?.addEventListener('click', () => {
+      if (currentDetailDevice) runPortScan(currentDetailDevice, 'common');
+    });
+    document.getElementById('portscan-full-btn')?.addEventListener('click', () => {
+      if (currentDetailDevice) runPortScan(currentDetailDevice, 'full');
+    });
+
+    // 历史记录按钮
+    document.getElementById('btn-history')?.addEventListener('click', () => {
+      const panel = document.getElementById('history-panel');
+      if (panel.style.display === 'flex') {
+        panel.style.display = 'none';
+      } else {
+        showHistoryPanel();
+      }
+    });
+    document.getElementById('history-close-btn')?.addEventListener('click', () => {
+      document.getElementById('history-panel').style.display = 'none';
+    });
+    document.getElementById('history-clear-btn')?.addEventListener('click', clearHistory);
+
+    // 告警按钮
+    document.getElementById('btn-alerts')?.addEventListener('click', () => {
+      const panel = document.getElementById('history-panel');
+      if (panel.style.display === 'flex' && panel.querySelector('.history-panel-header h3').textContent.includes('告警')) {
+        panel.style.display = 'none';
+      } else {
+        showAlertsPanel();
+      }
+    });
+
+    // 连续监控停止按钮
+    document.getElementById('monitor-stop-btn')?.addEventListener('click', stopMonitor);
 
     // 缩放控件
     document.getElementById('topo-zoom-in')?.addEventListener('click', () => applyTopoScale(topoScale + 0.15));
@@ -1008,6 +1865,14 @@
     document.getElementById('detail-close').addEventListener('click', hideDeviceDetail);
     document.getElementById('device-detail-overlay').addEventListener('click', (e) => {
       if (e.target.id === 'device-detail-overlay') hideDeviceDetail();
+    });
+
+    // ESC 关闭抽屉/历史面板
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        hideContextMenu();
+        document.getElementById('history-panel').style.display = 'none';
+      }
     });
   }
 
