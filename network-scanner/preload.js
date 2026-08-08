@@ -29,6 +29,17 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // 关于软件
   showAbout: () => ipcRenderer.invoke('app:showAbout'),
 
+  // AI 模型配置
+  aiGetConfig: () => ipcRenderer.invoke('ai:getConfig'),
+  aiSaveConfig: (config) => ipcRenderer.invoke('ai:saveConfig', config),
+  aiTestConnection: (config) => ipcRenderer.invoke('ai:testConnection', config),
+  aiAnalyzeDevice: (data) => ipcRenderer.invoke('ai:analyzeDevice', data),
+  onAiStreamChunk: (callback) => {
+    const wrapped = (event, chunk) => callback(chunk);
+    ipcRenderer.on('ai:streamChunk', wrapped);
+    return () => ipcRenderer.removeListener('ai:streamChunk', wrapped);
+  },
+
   // 监听扫描进度
   onScanProgress: (callback) => {
     const wrapped = (event, data) => callback(data);

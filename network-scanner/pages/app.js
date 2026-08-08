@@ -1138,8 +1138,10 @@
   function resetActionPanels() {
     const pingResult = document.getElementById('ping-result');
     const portscanResult = document.getElementById('portscan-result');
+    const aiResult = document.getElementById('ai-result');
     if (pingResult) pingResult.innerHTML = '<div class="port-empty">点击"开始 Ping"进行连通性测试</div>';
     if (portscanResult) portscanResult.innerHTML = '<div class="port-empty">点击"扫描常用端口"开始检测</div>';
+    if (aiResult) aiResult.innerHTML = '<div class="port-empty">点击"分析"按钮，AI 将生成该设备的安全分析报告</div>';
   }
 
   function hideDeviceDetail() {
@@ -1159,6 +1161,7 @@
       { icon: 'activity', label: 'Ping 测试（5 次）', action: () => { showDeviceDetail(device); runPingTest(device); } },
       { icon: 'git-branch', label: '端口扫描', action: () => { showDeviceDetail(device); runPortScan(device, 'common'); } },
       { icon: 'radio', label: '连续监控', action: () => startMonitor(device) },
+      { icon: 'sparkles', label: 'AI 智能分析', action: () => { showDeviceDetail(device); runAiAnalysis(); } },
       { divider: true },
       { icon: 'copy', label: '复制 IP 地址', action: () => copyToClipboard(device.ip) },
       { icon: 'copy', label: '复制 MAC 地址', action: () => copyToClipboard(device.mac || '') },
@@ -1618,10 +1621,24 @@
   }
 
   function clearHistory() {
-    if (!confirm('确定清空所有扫描历史记录吗？此操作不可撤销。')) return;
-    localStorage.removeItem(HISTORY_KEY);
-    showToast('历史记录已清空');
-    showHistoryPanel();
+    const panel = document.getElementById('history-panel');
+    const header = panel.querySelector('.history-panel-header h3');
+    const isAlertPanel = header.textContent.includes('告警');
+
+    if (isAlertPanel) {
+      // 清除当前告警
+      if (!confirm(`确定清除所有安全告警吗？(${activeAlerts.length} 条)`)) return;
+      activeAlerts = [];
+      updateAlertBadge();
+      panel.style.display = 'none';
+      showToast('告警已清除');
+    } else {
+      // 清除历史记录
+      if (!confirm('确定清空所有扫描历史记录吗？此操作不可撤销。')) return;
+      localStorage.removeItem(HISTORY_KEY);
+      showToast('历史记录已清空');
+      showHistoryPanel();
+    }
   }
 
   function bindEvents() {
@@ -1867,6 +1884,18 @@
       if (e.target.id === 'device-detail-overlay') hideDeviceDetail();
     });
 
+    // AI 配置弹窗
+    document.getElementById('btn-ai-config')?.addEventListener('click', openAiConfig);
+    document.getElementById('ai-config-close')?.addEventListener('click', closeAiConfig);
+    document.getElementById('ai-config-overlay')?.addEventListener('click', (e) => {
+      if (e.target.id === 'ai-config-overlay') closeAiConfig();
+    });
+    document.getElementById('ai-test-btn')?.addEventListener('click', testAiConnection);
+    document.getElementById('ai-save-btn')?.addEventListener('click', saveAiConfig);
+
+    // AI 分析按钮
+    document.getElementById('ai-analyze-btn')?.addEventListener('click', runAiAnalysis);
+
     // ESC 关闭抽屉/历史面板
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') {
@@ -1874,6 +1903,199 @@
         document.getElementById('history-panel').style.display = 'none';
       }
     });
+  }
+
+  // ── AI 模型配置与分析 ──────────────────────────────
+
+  let aiConfigCache = null;
+  let aiStreamCleanup = null;
+  let aiAnalyzing = false;
+
+  async function loadAiConfig() {
+    if (aiConfigCache) return aiConfigCache;
+    try {
+      aiConfigCache = await api.aiGetConfig();
+    } catch (e) { /* ignore */ }
+    return aiConfigCache;
+  }
+
+  function openAiConfig() {
+    const overlay = document.getElementById('ai-config-overlay');
+    const statusEl = document.getElementById('ai-config-status');
+    statusEl.textContent = '';
+    statusEl.className = 'ai-config-status';
+    overlay.style.display = 'flex';
+    // 加载已保存的配置
+    loadAiConfig().then(cfg => {
+      if (cfg) {
+        document.getElementById('ai-base-url').value = cfg.baseUrl || '';
+        document.getElementById('ai-api-key').value = cfg.apiKey || '';
+        document.getElementById('ai-model').value = cfg.model || '';
+        document.getElementById('ai-max-tokens').value = cfg.maxTokens || 2000;
+        document.getElementById('ai-temperature').value = String(cfg.temperature || 0.7);
+      }
+    });
+  }
+
+  function closeAiConfig() {
+    document.getElementById('ai-config-overlay').style.display = 'none';
+  }
+
+  function collectAiConfig() {
+    return {
+      baseUrl: document.getElementById('ai-base-url').value.trim(),
+      apiKey: document.getElementById('ai-api-key').value.trim(),
+      model: document.getElementById('ai-model').value.trim(),
+      maxTokens: parseInt(document.getElementById('ai-max-tokens').value) || 2000,
+      temperature: parseFloat(document.getElementById('ai-temperature').value) || 0.7
+    };
+  }
+
+  async function testAiConnection() {
+    const statusEl = document.getElementById('ai-config-status');
+    const btn = document.getElementById('ai-test-btn');
+    const config = collectAiConfig();
+    if (!config.baseUrl || !config.apiKey || !config.model) {
+      statusEl.textContent = '请填写完整：端点、API Key、模型名称';
+      statusEl.className = 'ai-config-status err';
+      return;
+    }
+    statusEl.textContent = '正在测试连接...';
+    statusEl.className = 'ai-config-status testing';
+    btn.disabled = true;
+    try {
+      const result = await api.aiTestConnection(config);
+      if (result.success) {
+        statusEl.innerHTML = '<i data-lucide="check-circle" style="width:12px;height:12px;"></i> 连接成功';
+        statusEl.className = 'ai-config-status ok';
+      } else {
+        statusEl.textContent = '失败：' + (result.error || '未知错误');
+        statusEl.className = 'ai-config-status err';
+      }
+    } catch (e) {
+      statusEl.textContent = '失败：' + e.message;
+      statusEl.className = 'ai-config-status err';
+    } finally {
+      btn.disabled = false;
+      lucide.createIcons();
+    }
+  }
+
+  async function saveAiConfig() {
+    const statusEl = document.getElementById('ai-config-status');
+    const config = collectAiConfig();
+    if (!config.baseUrl || !config.apiKey || !config.model) {
+      statusEl.textContent = '请填写完整：端点、API Key、模型名称';
+      statusEl.className = 'ai-config-status err';
+      return;
+    }
+    const result = await api.aiSaveConfig(config);
+    if (result.success) {
+      aiConfigCache = config;
+      showToast('AI 配置已保存');
+      closeAiConfig();
+    } else {
+      statusEl.textContent = '保存失败：' + (result.error || '未知错误');
+      statusEl.className = 'ai-config-status err';
+    }
+  }
+
+  // 简易 Markdown 渲染（仅支持标题、列表、粗体、段落）
+  function renderMarkdown(md) {
+    let html = md;
+    // 转义 HTML
+    html = html.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    // 标题
+    html = html.replace(/^### (.+)$/gm, '<h3>$1</h3>');
+    // 粗体
+    html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+    // 行内代码
+    html = html.replace(/`(.+?)`/g, '<code>$1</code>');
+    // 无序列表
+    html = html.replace(/^- (.+)$/gm, '<li>$1</li>');
+    html = html.replace(/(<li>.*<\/li>)/s, '<ul>$1</ul>');
+    html = html.replace(/<\/li>\s*<li>/g, '</li><li>');
+    // 有序列表
+    html = html.replace(/^\d+\. (.+)$/gm, '<li>$1</li>');
+    // 段落
+    html = html.replace(/\n\n/g, '</p><p>');
+    html = '<p>' + html + '</p>';
+    // 清理空段落
+    html = html.replace(/<p>\s*<\/p>/g, '');
+    html = html.replace(/<p>(<h3>)/g, '$1');
+    html = html.replace(/(<\/h3>)<\/p>/g, '$1');
+    html = html.replace(/<p>(<ul>)/g, '$1');
+    html = html.replace(/(<\/ul>)<\/p>/g, '$1');
+    html = html.replace(/<p>(<li>)/g, '<ul>$1');
+    html = html.replace(/(<\/li>)<\/p>/g, '$1</ul>');
+    return html;
+  }
+
+  async function runAiAnalysis() {
+    if (aiAnalyzing) return;
+    if (!currentDetailDevice) {
+      showToast('请先选择一个设备');
+      return;
+    }
+
+    const cfg = await loadAiConfig();
+    if (!cfg || !cfg.apiKey || !cfg.baseUrl || !cfg.model) {
+      showToast('请先配置 AI 模型');
+      openAiConfig();
+      return;
+    }
+
+    aiAnalyzing = true;
+    const btn = document.getElementById('ai-analyze-btn');
+    const resultEl = document.getElementById('ai-result');
+    btn.disabled = true;
+    btn.innerHTML = '<i data-lucide="loader-2" style="width:13px;height:13px;animation:spin 1s linear infinite;"></i> AI 分析中...';
+    lucide.createIcons();
+
+    // 显示流式接收状态
+    resultEl.innerHTML = '<div class="ai-analysis-streaming"><div class="dot"></div> AI 正在分析设备信息...</div>';
+
+    // 收集该设备的告警信息
+    const deviceAlerts = activeAlerts.filter(a => a.ip === currentDetailDevice.ip);
+    const scanContext = {
+      cidr: selectedAdapter?.cidr || '-',
+      alerts: deviceAlerts
+    };
+
+    let streamedText = '';
+
+    // 监听流式 chunk
+    if (aiStreamCleanup) aiStreamCleanup();
+    aiStreamCleanup = api.onAiStreamChunk((chunk) => {
+      streamedText += chunk;
+      const display = renderMarkdown(streamedText);
+      resultEl.innerHTML = '<div class="ai-analysis-content">' + display + '</div>';
+    });
+
+    try {
+      const result = await api.aiAnalyzeDevice({
+        device: currentDetailDevice,
+        localInfo: localInfo,
+        scanContext: scanContext
+      });
+
+      if (aiStreamCleanup) { aiStreamCleanup(); aiStreamCleanup = null; }
+
+      if (result.success) {
+        const html = renderMarkdown(result.content || streamedText);
+        resultEl.innerHTML = '<div class="ai-analysis-content">' + html + '</div>';
+      } else {
+        resultEl.innerHTML = '<div class="ai-analysis-error"><i data-lucide="alert-triangle" style="width:13px;height:13px;"></i> ' + (result.error || '分析失败') + '</div>';
+      }
+    } catch (e) {
+      if (aiStreamCleanup) { aiStreamCleanup(); aiStreamCleanup = null; }
+      resultEl.innerHTML = '<div class="ai-analysis-error">分析出错：' + e.message + '</div>';
+    } finally {
+      aiAnalyzing = false;
+      btn.disabled = false;
+      btn.innerHTML = '<i data-lucide="brain"></i> 重新分析';
+      lucide.createIcons();
+    }
   }
 
   async function init() {

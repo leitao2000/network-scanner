@@ -144,7 +144,7 @@ ipcMain.handle('network:export', async (event, data) => {
 
   const format = data.format || 'pdf';
   const dateStr = new Date().toISOString().slice(0, 10);
-  const formatNames = { pdf: 'PDF 报告', html: 'HTML 网页', csv: 'CSV 表格', json: 'JSON 数据' };
+  const formatNames = { pdf: 'PDF 报告', html: 'HTML 网页', csv: 'CSV 表格', json: 'JSON 数据', xlsx: 'Excel 表格' };
 
   const { filePath } = await dialog.showSaveDialog(mainWindow, {
     title: '导出扫描报告',
@@ -168,6 +168,97 @@ ipcMain.handle('network:export', async (event, data) => {
 
     } else if (filePath.endsWith('.json')) {
       fs.writeFileSync(filePath, JSON.stringify(data, null, 2), 'utf8');
+
+    } else if (filePath.endsWith('.xlsx')) {
+      // Excel 表格（带样式）
+      const ExcelJS = require('exceljs');
+      const wb = new ExcelJS.Workbook();
+      const ws = wb.addWorksheet('设备详情');
+
+      // 标题行
+      ws.mergeCells('A1:I1');
+      const titleCell = ws.getCell('A1');
+      titleCell.value = '网络扫描报告';
+      titleCell.font = { size: 16, bold: true, color: { argb: 'FF0F172A' } };
+      titleCell.alignment = { horizontal: 'center', vertical: 'middle' };
+      ws.getRow(1).height = 36;
+
+      // 信息行
+      ws.mergeCells('A2:I2');
+      const infoCell = ws.getCell('A2');
+      const onlineCount = devices.filter(d => d.status === '在线').length;
+      infoCell.value = `网段: ${data.cidr || '-'}  |  在线: ${onlineCount}/${devices.length}  |  耗时: ${data.elapsed ? (data.elapsed/1000).toFixed(1) : '-'}s  |  时间: ${new Date().toLocaleString('zh-CN')}`;
+      infoCell.font = { size: 11, color: { argb: 'FF64748B' } };
+      infoCell.alignment = { horizontal: 'center' };
+      ws.getRow(2).height = 24;
+
+      // 表头
+      const headers = ['IP 地址', 'MAC 地址', '主机名', '设备类型', '分类', '状态', '延迟', '探测方式', '开放端口'];
+      const headerRow = ws.getRow(4);
+      headers.forEach((h, i) => {
+        const cell = headerRow.getCell(i + 1);
+        cell.value = h;
+        cell.font = { bold: true, size: 11, color: { argb: 'FFFFFFFF' } };
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF475569' } };
+        cell.alignment = { horizontal: 'center', vertical: 'middle' };
+        cell.border = { top: { style: 'thin', color: { argb: 'FFE2E8F0' } }, bottom: { style: 'thin', color: { argb: 'FFE2E8F0' } } };
+      });
+      ws.getRow(4).height = 28;
+
+      // 数据行
+      const catLabels = { phone: '手机', computer: '电脑', router: '路由器', camera: '摄像头', iot: 'IoT', virtual: '虚拟', unknown: '未知' };
+      const riskStyles = {
+        high: { bg: 'FFFEE2E2', font: 'FFEF4444' },
+        medium: { bg: 'FFFEF3C7', font: 'FFF59E0B' },
+        low: { bg: 'FFDCFCE7', font: 'FF22C55E' }
+      };
+
+      devices.forEach((d, idx) => {
+        const row = ws.getRow(5 + idx);
+        const vals = [
+          d.ip || '',
+          d.mac ? d.mac.toUpperCase() : '',
+          d.hostname || '',
+          d.type || '',
+          d.category ? (catLabels[d.category] || d.category) : '',
+          d.status || '',
+          d.latency != null ? d.latency + ' ms' : '',
+          d.method === 'icmp' ? 'ICMP Ping' : d.method === 'tcp' ? 'TCP 端口' : (d.method || ''),
+          (d.services || []).map(s => `${s.port} ${s.name}${s.risk === 'high' ? ' [高危]' : s.risk === 'medium' ? ' [中危]' : ''}`).join('\n') || ''
+        ];
+
+        vals.forEach((v, i) => {
+          const cell = row.getCell(i + 1);
+          cell.value = v;
+          cell.font = { size: 11, color: { argb: 'FF334155' } };
+          cell.alignment = { vertical: 'top', wrapText: true, ...(i < 5 ? { horizontal: 'left' } : { horizontal: 'center' }) };
+          cell.border = { bottom: { style: 'thin', color: { argb: 'FFF1F5F9' } } };
+        });
+
+        // 在线状态着色
+        const statusCell = row.getCell(6);
+        if (d.status === '在线') {
+          statusCell.font = { size: 11, bold: true, color: { argb: 'FF22C55E' } };
+        }
+
+        // 斑马纹
+        if (idx % 2 === 1) {
+          for (let i = 1; i <= 9; i++) {
+            row.getCell(i).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF8FAFC' } };
+          }
+        }
+      });
+
+      // 列宽
+      ws.columns = [
+        { width: 15 }, { width: 18 }, { width: 16 }, { width: 16 }, { width: 8 },
+        { width: 8 }, { width: 10 }, { width: 12 }, { width: 45 }
+      ];
+
+      // 冻结表头
+      ws.views = [{ state: 'frozen', ySplit: 4 }];
+
+      await wb.xlsx.writeFile(filePath);
 
     } else if (filePath.endsWith('.pdf')) {
       // PDF：用隐藏窗口渲染 HTML 再 printToPDF
@@ -357,3 +448,237 @@ ipcMain.handle('app:showAbout', async () => {
     buttons: ['确定']
   });
 });
+
+// ── AI 模型配置与分析 ──────────────────────────
+const AI_CONFIG_FILE = path.join(app.getPath('userData'), 'ai-config.json');
+
+// 读取 AI 配置
+ipcMain.handle('ai:getConfig', async () => {
+  try {
+    const fs = require('fs');
+    if (fs.existsSync(AI_CONFIG_FILE)) {
+      const raw = fs.readFileSync(AI_CONFIG_FILE, 'utf8');
+      return JSON.parse(raw);
+    }
+  } catch (e) { /* ignore */ }
+  return null;
+});
+
+// 保存 AI 配置
+ipcMain.handle('ai:saveConfig', async (event, config) => {
+  try {
+    const fs = require('fs');
+    fs.writeFileSync(AI_CONFIG_FILE, JSON.stringify(config, null, 2), 'utf8');
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+// 测试 AI 连通性
+ipcMain.handle('ai:testConnection', async (event, config) => {
+  try {
+    const https = require('https');
+    const http = require('http');
+    const urlStr = config.baseUrl.replace(/\/+$/, '') + '/chat/completions';
+    const urlObj = new URL(urlStr);
+    const isHttps = urlObj.protocol === 'https:';
+    const lib = isHttps ? https : http;
+
+    return await new Promise((resolve, reject) => {
+      const postData = JSON.stringify({
+        model: config.model,
+        messages: [{ role: 'user', content: '回复"连接成功"四个字' }],
+        max_tokens: 20,
+        temperature: 0
+      });
+
+      const options = {
+        hostname: urlObj.hostname,
+        port: urlObj.port || (isHttps ? 443 : 80),
+        path: urlObj.pathname + (urlObj.search || ''),
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${config.apiKey}`,
+          'Content-Length': Buffer.byteLength(postData)
+        }
+      };
+
+      const req = lib.request(options, (res) => {
+        let body = '';
+        res.on('data', (chunk) => { body += chunk; });
+        res.on('end', () => {
+          if (res.statusCode >= 200 && res.statusCode < 300) {
+            resolve({ success: true, status: res.statusCode });
+          } else {
+            reject(new Error(`HTTP ${res.statusCode}: ${body.slice(0, 200)}`));
+          }
+        });
+      });
+      req.on('error', (e) => reject(new Error(e.message)));
+      req.setTimeout(10000, () => { req.destroy(); reject(new Error('请求超时（10s）')); });
+      req.write(postData);
+      req.end();
+    });
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+// AI 分析设备
+ipcMain.handle('ai:analyzeDevice', async (event, { device, localInfo, scanContext }) => {
+  let config;
+  try {
+    const fs = require('fs');
+    if (fs.existsSync(AI_CONFIG_FILE)) {
+      config = JSON.parse(fs.readFileSync(AI_CONFIG_FILE, 'utf8'));
+    }
+  } catch (e) { /* ignore */ }
+  if (!config || !config.apiKey || !config.baseUrl || !config.model) {
+    return { success: false, error: 'AI 模型未配置，请先在设置中配置 API Key、端点和模型名称' };
+  }
+
+  // 构造 prompt
+  const svcs = (device.services || []).map(s => {
+    const port = typeof s === 'object' ? s.port : s;
+    const name = typeof s === 'object' ? s.name : (PORT_SVC_NAMES[port] || 'unknown');
+    const risk = typeof s === 'object' ? s.risk : 'low';
+    const desc = typeof s === 'object' ? (s.desc || '') : '';
+    return `  - 端口 ${port} (${name})，风险等级: ${risk === 'high' ? '高危' : risk === 'medium' ? '中危' : '低危'}${desc ? '，' + desc : ''}`;
+  }).join('\n') || '  - 无开放端口';
+
+  const alerts = (scanContext?.alerts || []).map(a => `  - [${a.level === 'high' ? '高危' : '中危'}] ${a.title}: ${a.detail || ''}`).join('\n') || '  - 无告警';
+
+  const deviceInfo = {
+    ip: device.ip,
+    mac: device.mac || '未知',
+    hostname: device.hostname || '未知',
+    type: device.type || '未知',
+    category: device.category || 'unknown',
+    latency: device.latency != null ? device.latency + 'ms' : '未知',
+    method: device.method || '未知',
+    status: device.status || '未知',
+    openPorts: svcs,
+    alerts: alerts,
+    subnet: scanContext?.cidr || '未知',
+    localIp: localInfo?.ip || '未知',
+    gateway: localInfo?.gateway || '未知'
+  };
+
+  const prompt = `你是一位资深网络安全分析师。请根据以下局域网扫描设备信息，从"用户画像"和"安全风险"两个维度进行分析。
+
+## 设备信息
+- IP 地址: ${deviceInfo.ip}
+- MAC 地址: ${deviceInfo.mac}
+- 主机名: ${deviceInfo.hostname}
+- 设备类型/分类: ${deviceInfo.type} / ${deviceInfo.category}
+- 网络状态: ${deviceInfo.status}，延迟 ${deviceInfo.latency}，探测方式 ${deviceInfo.method}
+- 所属网段: ${deviceInfo.subnet}
+- 本机 IP: ${deviceInfo.localIp}，网关: ${deviceInfo.gateway}
+
+## 开放端口
+${deviceInfo.openPorts}
+
+## 安全告警
+${deviceInfo.alerts}
+
+## 输出要求
+请用中文，按以下 Markdown 格式输出（不要输出其他内容）：
+
+### 用户画像
+推测该设备的使用者身份、用途场景、技术水平等。
+
+### 安全风险
+列出风险点并给出风险等级（高/中/低），包括端口暴露、协议安全、权限风险等。
+
+### 建议措施
+给出 3-5 条具体可操作的安全加固建议。`;
+
+  try {
+    const https = require('https');
+    const http = require('http');
+    const urlStr = config.baseUrl.replace(/\/+$/, '') + '/chat/completions';
+    const urlObj = new URL(urlStr);
+    const isHttps = urlObj.protocol === 'https:';
+    const lib = isHttps ? https : http;
+
+    const postData = JSON.stringify({
+      model: config.model,
+      messages: [
+        { role: 'system', content: '你是一位专业的网络安全分析师，擅长分析局域网设备的安全风险。请使用中文回答，输出 Markdown 格式。' },
+        { role: 'user', content: prompt }
+      ],
+      max_tokens: config.maxTokens || 2000,
+      temperature: config.temperature || 0.7,
+      stream: true
+    });
+
+    return await new Promise((resolve, reject) => {
+      const options = {
+        hostname: urlObj.hostname,
+        port: urlObj.port || (isHttps ? 443 : 80),
+        path: urlObj.pathname + (urlObj.search || ''),
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${config.apiKey}`,
+          'Content-Length': Buffer.byteLength(postData)
+        }
+      };
+
+      const req = lib.request(options, (res) => {
+        let fullText = '';
+        let buffer = '';
+
+        res.on('data', (chunk) => {
+          buffer += chunk.toString();
+          const lines = buffer.split('\n');
+          buffer = lines.pop() || '';
+
+          for (const line of lines) {
+            const trimmed = line.trim();
+            if (!trimmed || trimmed.startsWith(': ')) continue;
+            if (!trimmed.startsWith('data: ')) continue;
+            const data = trimmed.slice(6);
+            if (data === '[DONE]') continue;
+            try {
+              const json = JSON.parse(data);
+              const delta = json.choices?.[0]?.delta?.content;
+              if (delta) {
+                fullText += delta;
+                // 流式推送给渲染进程
+                if (mainWindow && !mainWindow.isDestroyed()) {
+                  mainWindow.webContents.send('ai:streamChunk', delta);
+                }
+              }
+            } catch (e) { /* skip invalid JSON */ }
+          }
+        });
+
+        res.on('end', () => {
+          if (res.statusCode >= 200 && res.statusCode < 300) {
+            resolve({ success: true, content: fullText });
+          } else {
+            reject(new Error(`HTTP ${res.statusCode}`));
+          }
+        });
+      });
+
+      req.on('error', (e) => reject(new Error(e.message)));
+      req.setTimeout(60000, () => { req.destroy(); reject(new Error('请求超时（60s）')); });
+      req.write(postData);
+      req.end();
+    });
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+});
+
+const PORT_SVC_NAMES = {
+  21: 'FTP', 22: 'SSH', 23: 'Telnet', 25: 'SMTP', 53: 'DNS',
+  80: 'HTTP', 110: 'POP3', 135: 'MS-RPC', 139: 'NetBIOS', 143: 'IMAP',
+  443: 'HTTPS', 445: 'SMB', 993: 'IMAPS', 995: 'POP3S',
+  1433: 'MSSQL', 1521: 'Oracle', 3306: 'MySQL', 3389: 'RDP',
+  5432: 'PostgreSQL', 5900: 'VNC', 6379: 'Redis', 8080: 'HTTP-Alt', 8443: 'HTTPS-Alt', 27017: 'MongoDB'
+};

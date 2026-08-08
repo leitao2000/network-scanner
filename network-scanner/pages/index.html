@@ -681,6 +681,159 @@ body {
       .monitor-float-chart { height: 32px; margin-top: 8px; display: flex; align-items: flex-end; gap: 2px; }
       .monitor-float-chart .bar { flex: 1; background: var(--scanner-state-success); border-radius: 2px 2px 0 0; min-height: 2px; transition: height 0.3s; }
       .monitor-float-chart .bar.fail { background: var(--scanner-state-error); }
+
+      /* AI 配置弹窗 */
+      .ai-config-overlay {
+        position: fixed;
+        inset: 0;
+        background: rgba(0,0,0,0.4);
+        z-index: 70;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .ai-config-dialog {
+        width: 480px;
+        max-width: 90vw;
+        max-height: 85vh;
+        background: var(--scanner-card);
+        border-radius: 14px;
+        box-shadow: var(--scanner-shadow-3);
+        display: flex;
+        flex-direction: column;
+        overflow: hidden;
+      }
+      .ai-config-dialog-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 18px 22px;
+        border-bottom: 1px solid var(--scanner-border);
+      }
+      .ai-config-dialog-header h3 {
+        font-size: 15px;
+        font-weight: 600;
+        color: var(--scanner-ink);
+        margin: 0;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .ai-config-dialog-body {
+        padding: 20px 22px;
+        overflow-y: auto;
+        flex: 1;
+      }
+      .ai-config-field {
+        margin-bottom: 16px;
+      }
+      .ai-config-field label {
+        display: block;
+        font-size: 12px;
+        font-weight: 600;
+        color: var(--scanner-ink-2);
+        margin-bottom: 6px;
+      }
+      .ai-config-field .hint {
+        font-size: 10px;
+        color: var(--scanner-ink-3);
+        margin-top: 4px;
+      }
+      .ai-config-field input,
+      .ai-config-field select {
+        width: 100%;
+        padding: 8px 12px;
+        font-size: 13px;
+        border: 1px solid var(--scanner-border);
+        border-radius: 6px;
+        background: var(--scanner-input);
+        color: var(--scanner-ink);
+        outline: none;
+        transition: border-color 0.15s;
+      }
+      .ai-config-field input:focus,
+      .ai-config-field select:focus {
+        border-color: var(--scanner-primary);
+      }
+      .ai-config-field input::placeholder {
+        color: var(--scanner-ink-3);
+        opacity: 1;
+      }
+      .ai-config-field input:focus::placeholder {
+        opacity: 0;
+      }
+      .ai-config-dialog-footer {
+        display: flex;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 10px;
+        padding: 14px 22px;
+        border-top: 1px solid var(--scanner-border);
+      }
+      .ai-config-status {
+        font-size: 11px;
+        margin-right: auto;
+        display: flex;
+        align-items: center;
+        gap: 4px;
+      }
+      .ai-config-status.ok { color: var(--scanner-state-success); }
+      .ai-config-status.err { color: var(--scanner-state-error); }
+      .ai-config-status.testing { color: var(--scanner-state-info); }
+
+      /* AI 分析结果 */
+      .ai-analysis-content {
+        font-size: 12px;
+        line-height: 1.7;
+        color: var(--scanner-ink);
+        padding: 12px 14px;
+        border-radius: 8px;
+        background: var(--scanner-muted);
+        border: 1px solid var(--scanner-border);
+      }
+      .ai-analysis-content h3 {
+        font-size: 13px;
+        font-weight: 700;
+        margin: 12px 0 6px 0;
+        color: var(--scanner-primary);
+      }
+      .ai-analysis-content h3:first-child { margin-top: 0; }
+      .ai-analysis-content ul, .ai-analysis-content ol {
+        padding-left: 18px;
+        margin: 6px 0;
+      }
+      .ai-analysis-content li { margin-bottom: 3px; }
+      .ai-analysis-content p { margin: 6px 0; }
+      .ai-analysis-content strong { color: var(--scanner-ink); font-weight: 700; }
+      .ai-analysis-content code {
+        font-family: var(--scanner-font-mono);
+        font-size: 11px;
+        padding: 1px 4px;
+        border-radius: 3px;
+        background: var(--scanner-border);
+      }
+      .ai-analysis-streaming {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 12px 14px;
+        font-size: 12px;
+        color: var(--scanner-primary);
+      }
+      .ai-analysis-streaming .dot {
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: var(--scanner-primary);
+        animation: scanPulse 1s ease-in-out infinite;
+      }
+      .ai-analysis-error {
+        padding: 10px 14px;
+        font-size: 12px;
+        color: var(--scanner-state-error);
+        background: var(--scanner-state-error-bg);
+        border-radius: 8px;
+      }
     </style>
 </head>
 <body class="min-h-screen font-sans antialiased">
@@ -780,6 +933,10 @@ body {
                 <button id="btn-history" class="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium rounded-md border border-border bg-card text-foreground hover:bg-muted transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" title="扫描历史">
                   <i data-lucide="history" class="w-3.5 h-3.5"></i>
                   <span class="hidden sm:inline">历史</span>
+                </button>
+                <button id="btn-ai-config" class="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium rounded-md border border-border bg-card text-foreground hover:bg-muted transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" title="AI 模型配置">
+                  <i data-lucide="bot" class="w-3.5 h-3.5"></i>
+                  <span class="hidden sm:inline">AI</span>
                 </button>
                 <button id="btn-export" class="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium rounded-md border border-border bg-card text-foreground hover:bg-muted transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
                   <i data-lucide="download" class="w-3.5 h-3.5"></i>
@@ -1061,6 +1218,15 @@ body {
               <div style="font-size:12px; color:var(--scanner-ink-3);">完整原始数据，供程序处理</div>
             </div>
           </button>
+          <button class="export-format-btn" data-format="xlsx" style="display:flex; align-items:center; gap:12px; padding:14px 16px; border:2px solid var(--scanner-border); border-radius:10px; background:var(--scanner-card); cursor:pointer; text-align:left; transition:all 0.15s;">
+            <div style="width:40px; height:40px; border-radius:8px; background:#dcfce7; display:flex; align-items:center; justify-content:center; flex-shrink:0;">
+              <i data-lucide="sheet" style="width:20px; height:20px; color:#16a34a;"></i>
+            </div>
+            <div style="flex:1;">
+              <div style="font-size:14px; font-weight:600; color:var(--scanner-ink);">Excel 表格</div>
+              <div style="font-size:12px; color:var(--scanner-ink-3);">带样式的 .xlsx 文件，含标题和端口详情</div>
+            </div>
+          </button>
         </div>
       </div>
     </div>
@@ -1137,11 +1303,30 @@ body {
             </div>
           </div>
         </div>
+
+        <!-- AI 分析面板 -->
+        <div class="action-panel" id="ai-panel">
+          <div class="action-panel-header" data-toggle="ai-panel">
+            <div class="action-panel-title">
+              <i data-lucide="sparkles"></i>
+              AI 智能分析
+            </div>
+            <i data-lucide="chevron-down" class="action-panel-toggle"></i>
+          </div>
+          <div class="action-panel-body">
+            <div class="action-panel-actions">
+              <button class="action-btn primary" id="ai-analyze-btn">
+                <i data-lucide="brain"></i> 分析用户画像与安全风险
+              </button>
+            </div>
+            <div class="action-panel-hint">调用 AI 模型分析设备使用者画像、安全风险并给出加固建议（需先配置 AI 模型）。</div>
+            <div id="ai-result">
+              <div class="port-empty">点击"分析"按钮，AI 将生成该设备的安全分析报告</div>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
-
-    <!-- 右键上下文菜单 -->
-    <div id="ctx-menu" class="ctx-menu" style="display:none;"></div>
 
     <!-- 历史记录面板 -->
     <div id="history-panel" class="history-panel" style="display:none;">
@@ -1183,6 +1368,58 @@ body {
           <span><b id="monitor-avg">-</b> / <b id="monitor-loss">0%</b></span>
         </div>
         <div id="monitor-chart" class="monitor-float-chart"></div>
+      </div>
+    </div>
+
+    <!-- AI 配置弹窗 -->
+    <div id="ai-config-overlay" class="ai-config-overlay" style="display:none;">
+      <div class="ai-config-dialog">
+        <div class="ai-config-dialog-header">
+          <h3><i data-lucide="bot" style="width:18px;height:18px;color:var(--scanner-primary);"></i> AI 模型配置</h3>
+          <button id="ai-config-close" class="drawer-close" style="width:28px;height:28px;">
+            <i data-lucide="x" style="width:15px;height:15px;"></i>
+          </button>
+        </div>
+        <div class="ai-config-dialog-body">
+          <div class="ai-config-field">
+            <label>API 端点 (Base URL)</label>
+            <input id="ai-base-url" type="text" placeholder="https://api.openai.com/v1" />
+            <div class="hint">兼容 OpenAI 格式的 API 地址，如 https://api.openai.com/v1 或 http://localhost:11434/v1</div>
+          </div>
+          <div class="ai-config-field">
+            <label>API Key</label>
+            <input id="ai-api-key" type="password" placeholder="sk-..." />
+            <div class="hint">用于身份验证的密钥，本地保存不会上传</div>
+          </div>
+          <div class="ai-config-field">
+            <label>模型名称</label>
+            <input id="ai-model" type="text" placeholder="gpt-4o / deepseek-chat / qwen-plus" />
+            <div class="hint">调用的大语言模型标识符</div>
+          </div>
+          <div class="ai-config-field">
+            <label>最大 Token 数</label>
+            <input id="ai-max-tokens" type="number" value="2000" min="100" max="8000" />
+            <div class="hint">AI 回复的最大长度</div>
+          </div>
+          <div class="ai-config-field">
+            <label>温度 (Temperature)</label>
+            <select id="ai-temperature">
+              <option value="0.3">0.3（严谨分析）</option>
+              <option value="0.7" selected>0.7（平衡）</option>
+              <option value="1.0">1.0（创意发散）</option>
+            </select>
+            <div class="hint">值越低回答越确定，越高越有创造性</div>
+          </div>
+        </div>
+        <div class="ai-config-dialog-footer">
+          <span id="ai-config-status" class="ai-config-status"></span>
+          <button id="ai-test-btn" class="action-btn">
+            <i data-lucide="plug" style="width:13px;height:13px;"></i> 测试连接
+          </button>
+          <button id="ai-save-btn" class="action-btn primary">
+            <i data-lucide="check" style="width:13px;height:13px;"></i> 保存
+          </button>
+        </div>
       </div>
     </div>
 
