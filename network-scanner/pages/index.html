@@ -810,6 +810,13 @@ body {
       .ai-config-field select:focus {
         border-color: var(--scanner-primary);
       }
+      .ai-config-field input:disabled,
+      .ai-config-field select:disabled {
+        background: var(--scanner-bg);
+        color: var(--scanner-ink-2);
+        opacity: 0.8;
+        cursor: not-allowed;
+      }
       .ai-config-field input::placeholder {
         color: var(--scanner-ink-3);
         opacity: 1;
@@ -836,21 +843,103 @@ body {
       .ai-config-status.err { color: var(--scanner-state-error); }
       .ai-config-status.testing { color: var(--scanner-state-info); }
 
+      /* AI 分析类型按钮 */
+      .ai-analyze-types {
+        display: flex;
+        gap: 8px;
+        margin-bottom: 8px;
+      }
+      .ai-type-btn {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 4px;
+        padding: 10px 6px;
+        border-radius: 10px;
+        border: 1px solid var(--scanner-border);
+        background: var(--scanner-card);
+        color: var(--scanner-ink-2);
+        font-size: 12px;
+        font-weight: 500;
+        cursor: pointer;
+        transition: all 0.2s;
+      }
+      .ai-type-btn:hover {
+        border-color: var(--scanner-primary);
+        color: var(--scanner-primary);
+        background: var(--scanner-primary-bg);
+      }
+      .ai-type-btn.primary {
+        border-color: var(--scanner-primary);
+        background: var(--scanner-primary);
+        color: #fff;
+      }
+      .ai-type-btn.primary:hover {
+        opacity: 0.9;
+      }
+      .ai-type-btn:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+      }
+      .ai-config-link {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 4px;
+        font-size: 11px;
+        color: var(--scanner-ink-3);
+        cursor: pointer;
+        padding: 4px;
+        transition: color 0.2s;
+      }
+      .ai-config-link:hover { color: var(--scanner-primary); }
+
+      /* AI 空状态 */
+      .ai-empty {
+        text-align: center;
+        padding: 28px 14px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 10px;
+      }
+      .ai-empty p {
+        font-size: 12px;
+        color: var(--scanner-ink-3);
+        margin: 0;
+      }
+      .ai-empty-tags {
+        display: flex;
+        gap: 6px;
+      }
+      .ai-tag {
+        font-size: 10px;
+        padding: 2px 8px;
+        border-radius: 10px;
+        background: var(--scanner-muted);
+        color: var(--scanner-ink-3);
+        border: 1px solid var(--scanner-border);
+      }
+
       /* AI 分析结果 */
       .ai-analysis-content {
         font-size: 12px;
-        line-height: 1.7;
+        line-height: 1.75;
         color: var(--scanner-ink);
-        padding: 12px 14px;
-        border-radius: 8px;
+        padding: 14px 16px;
+        border-radius: 10px;
         background: var(--scanner-muted);
         border: 1px solid var(--scanner-border);
       }
       .ai-analysis-content h3 {
         font-size: 13px;
         font-weight: 700;
-        margin: 12px 0 6px 0;
+        margin: 14px 0 6px 0;
         color: var(--scanner-primary);
+        display: flex;
+        align-items: center;
+        gap: 6px;
       }
       .ai-analysis-content h3:first-child { margin-top: 0; }
       .ai-analysis-content ul, .ai-analysis-content ol {
@@ -867,27 +956,95 @@ body {
         border-radius: 3px;
         background: var(--scanner-border);
       }
-      .ai-analysis-streaming {
+
+      /* AI 加载状态 */
+      .ai-loading {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        padding: 18px 16px;
+      }
+      .ai-loading-header {
         display: flex;
         align-items: center;
         gap: 8px;
-        padding: 12px 14px;
-        font-size: 12px;
+        font-size: 13px;
+        font-weight: 600;
         color: var(--scanner-primary);
       }
-      .ai-analysis-streaming .dot {
-        width: 6px;
-        height: 6px;
-        border-radius: 50%;
+      .ai-loading-header .dot {
+        width: 7px; height: 7px; border-radius: 50%;
         background: var(--scanner-primary);
         animation: scanPulse 1s ease-in-out infinite;
       }
+      .ai-loading-meta {
+        font-size: 10px;
+        color: var(--scanner-ink-3);
+        line-height: 1.6;
+        padding-left: 15px;
+      }
+      .ai-loading-bar {
+        height: 3px;
+        border-radius: 2px;
+        background: var(--scanner-border);
+        overflow: hidden;
+      }
+      .ai-loading-bar-inner {
+        height: 100%;
+        width: 40%;
+        border-radius: 2px;
+        background: linear-gradient(90deg, transparent, var(--scanner-primary), transparent);
+        animation: aiSlide 1.5s ease-in-out infinite;
+      }
+      @keyframes aiSlide {
+        0% { transform: translateX(-100%); }
+        100% { transform: translateX(350%); }
+      }
+
+      /* AI 结果操作栏 */
+      .ai-result-toolbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 8px;
+      }
+      .ai-result-label {
+        font-size: 11px;
+        color: var(--scanner-ink-3);
+        display: flex;
+        align-items: center;
+        gap: 4px;
+      }
+      .ai-result-actions {
+        display: flex;
+        gap: 6px;
+      }
+      .ai-result-btn {
+        font-size: 11px;
+        padding: 3px 10px;
+        border-radius: 6px;
+        border: 1px solid var(--scanner-border);
+        background: var(--scanner-card);
+        color: var(--scanner-ink-2);
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        transition: all 0.2s;
+      }
+      .ai-result-btn:hover {
+        border-color: var(--scanner-primary);
+        color: var(--scanner-primary);
+      }
+
+      /* AI 分析错误 */
       .ai-analysis-error {
-        padding: 10px 14px;
+        padding: 12px 14px;
         font-size: 12px;
         color: var(--scanner-state-error);
         background: var(--scanner-state-error-bg);
-        border-radius: 8px;
+        border-radius: 10px;
+        line-height: 1.7;
       }
     </style>
 </head>
@@ -1372,14 +1529,38 @@ body {
             <i data-lucide="chevron-down" class="action-panel-toggle"></i>
           </div>
           <div class="action-panel-body">
-            <div class="action-panel-actions">
-              <button class="action-btn primary" id="ai-analyze-btn">
-                <i data-lucide="brain"></i> 分析用户画像与安全风险
-              </button>
+            <!-- 分析类型选择 -->
+            <div id="ai-analyze-section">
+              <div class="ai-analyze-types">
+                <button class="ai-type-btn" data-type="profile">
+                  <i data-lucide="user-search" style="width:16px;height:16px;"></i>
+                  <span>用户画像</span>
+                </button>
+                <button class="ai-type-btn" data-type="security">
+                  <i data-lucide="shield-alert" style="width:16px;height:16px;"></i>
+                  <span>安全风险</span>
+                </button>
+                <button class="ai-type-btn primary" data-type="full">
+                  <i data-lucide="brain" style="width:16px;height:16px;"></i>
+                  <span>综合分析</span>
+                </button>
+              </div>
+              <div class="ai-config-link" id="ai-config-link">
+                <i data-lucide="settings" style="width:12px;height:12px;"></i>
+                <span>配置 AI 模型</span>
+              </div>
             </div>
-            <div class="action-panel-hint">调用 AI 模型分析设备使用者画像、安全风险并给出加固建议（需先配置 AI 模型）。</div>
+            <!-- 结果区 -->
             <div id="ai-result">
-              <div class="port-empty">点击"分析"按钮，AI 将生成该设备的安全分析报告</div>
+              <div class="ai-empty">
+                <i data-lucide="sparkles" style="width:28px;height:28px;color:var(--scanner-ink-3);"></i>
+                <p>选择分析类型，AI 将生成该设备的智能分析报告</p>
+                <div class="ai-empty-tags">
+                  <span class="ai-tag">用户画像</span>
+                  <span class="ai-tag">安全风险</span>
+                  <span class="ai-tag">加固建议</span>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -1457,10 +1638,22 @@ body {
             </select>
             <div class="hint" id="ai-provider-hint">选择服务商后端点自动填充，仅需填写密钥和选择模型</div>
           </div>
+          <div class="ai-config-field">
+            <label>API 格式</label>
+            <select id="ai-api-format">
+              <option value="openai-chat">OpenAI Chat Completions (v1/chat/completions)</option>
+              <option value="anthropic-messages">Anthropic Messages (原生 /v1/messages)</option>
+              <option value="openai-responses">OpenAI Responses API (v1/responses)</option>
+              <option value="openai-completions">OpenAI Completions (旧版 v1/completions)</option>
+              <option value="gemini">Google Gemini (models:generateContent)</option>
+              <option value="ollama-chat">Ollama Chat (/api/chat)</option>
+            </select>
+            <div class="hint" id="ai-format-hint">不同服务商的 API 接口格式不同，需与端点对应</div>
+          </div>
           <div class="ai-config-field" id="ai-base-url-field" style="display:none;">
             <label>API 端点 (Base URL)</label>
             <input id="ai-base-url" type="text" placeholder="https://api.openai.com/v1" />
-            <div class="hint">支持 OpenAI 格式和 Anthropic 格式（含 anthropic 的 URL 自动识别）</div>
+            <div class="hint">自定义模式下填写，对应服务商提供的 Base URL</div>
           </div>
           <div class="ai-config-field">
             <label>API Key</label>

@@ -1161,7 +1161,7 @@
       { icon: 'activity', label: 'Ping 测试（5 次）', action: () => { showDeviceDetail(device); runPingTest(device); } },
       { icon: 'git-branch', label: '端口扫描', action: () => { showDeviceDetail(device); runPortScan(device, 'common'); } },
       { icon: 'radio', label: '连续监控', action: () => startMonitor(device) },
-      { icon: 'sparkles', label: 'AI 智能分析', action: () => { showDeviceDetail(device); runAiAnalysis(); } },
+      { icon: 'sparkles', label: 'AI 智能分析', action: () => { showDeviceDetail(device); setTimeout(() => runAiAnalysis('full'), 300); } },
       { divider: true },
       { icon: 'copy', label: '复制 IP 地址', action: () => copyToClipboard(device.ip) },
       { icon: 'copy', label: '复制 MAC 地址', action: () => copyToClipboard(device.mac || '') },
@@ -1896,8 +1896,14 @@
     document.getElementById('ai-provider')?.addEventListener('change', (e) => applyProviderSelection(e.target.value));
     document.getElementById('ai-save-btn')?.addEventListener('click', saveAiConfig);
 
-    // AI 分析按钮
-    document.getElementById('ai-analyze-btn')?.addEventListener('click', runAiAnalysis);
+    // AI 分析按钮（三种分析类型）
+    document.querySelectorAll('.ai-type-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        setActiveAiType(btn.dataset.type);
+        runAiAnalysis(btn.dataset.type);
+      });
+    });
+    document.getElementById('ai-config-link')?.addEventListener('click', openAiConfig);
 
     // ESC 关闭抽屉/历史面板
     document.addEventListener('keydown', (e) => {
@@ -1934,18 +1940,18 @@
 
   // ── 供应商预设数据 ──
   const AI_PROVIDERS = {
-    custom:     { name: '自定义', baseUrl: '', models: [], keyHint: '填写对应服务商的 API Key', keyPlaceholder: 'sk-...' },
-    openai:     { name: 'OpenAI', baseUrl: 'https://api.openai.com/v1', models: ['gpt-4o', 'gpt-4o-mini', 'gpt-4-turbo', 'gpt-3.5-turbo'], keyHint: 'OpenAI API Key（sk- 开头）', keyPlaceholder: 'sk-...' },
-    deepseek:   { name: 'DeepSeek', baseUrl: 'https://api.deepseek.com/v1', models: ['deepseek-chat', 'deepseek-reasoner'], keyHint: 'DeepSeek API Key', keyPlaceholder: 'sk-...' },
-    zhipu:      { name: '智谱 AI', baseUrl: 'https://open.bigmodel.cn/api/paas/v4', models: ['glm-4-plus', 'glm-4-flash', 'glm-4-air', 'glm-4-airx', 'glm-4-long', 'glm-4v', 'glm-4v-flash'], keyHint: '智谱 API Key', keyPlaceholder: 'xxx.xxx' },
-    moonshot:   { name: 'Moonshot', baseUrl: 'https://api.moonshot.cn/v1', models: ['moonshot-v1-8k', 'moonshot-v1-32k', 'moonshot-v1-128k'], keyHint: 'Moonshot API Key（sk- 开头）', keyPlaceholder: 'sk-...' },
-    qwen:       { name: '通义千问', baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1', models: ['qwen-plus', 'qwen-turbo', 'qwen-max', 'qwen-long'], keyHint: '阿里云 DashScope API Key', keyPlaceholder: 'sk-...' },
-    baidu:      { name: '文心一言', baseUrl: 'https://qianfan.baidubce.com/v2', models: ['ernie-4.0-turbo-8k', 'ernie-4.0-8k-latest', 'ernie-3.5-8k', 'ernie-speed-128k'], keyHint: '百度千帆 API Key', keyPlaceholder: '...' },
-    minimax:    { name: 'MiniMax', baseUrl: 'https://api.minimax.chat/v1', models: ['abab6.5s-chat', 'abab6.5-chat', 'abab6-chat'], keyHint: 'MiniMax API Key', keyPlaceholder: '...' },
-    baichuan:   { name: '百川', baseUrl: 'https://api.baichuan-ai.com/v1', models: ['Baichuan4-Turbo', 'Baichuan3-Turbo', 'Baichuan2-Turbo'], keyHint: '百川 API Key', keyPlaceholder: 'sk-...' },
-    yi:         { name: '零一万物', baseUrl: 'https://api.lingyiwanwu.com/v1', models: ['yi-large', 'yi-medium', 'yi-lightning', 'yi-vision'], keyHint: '零一万物 API Key', keyPlaceholder: '...' },
-    stepfun:    { name: '阶跃星辰', baseUrl: 'https://api.stepfun.com/v1', models: ['step-1-8k', 'step-1-32k', 'step-1-128k', 'step-1v-8k', 'step-1v-32k'], keyHint: '阶跃星辰 API Key', keyPlaceholder: '...' },
-    ollama:     { name: 'Ollama', baseUrl: 'http://localhost:11434/v1', models: ['qwen2.5:7b', 'qwen2.5:14b', 'llama3.1:8b', 'llama3.1:70b', 'deepseek-r1:7b', 'deepseek-r1:14b'], keyHint: 'Ollama 默认无需密钥，随意填写即可', keyPlaceholder: 'ollama' },
+    custom:     { name: '自定义', baseUrl: '', apiFormat: 'openai-chat', models: [], keyHint: '填写对应服务商的 API Key', keyPlaceholder: 'sk-...' },
+    openai:     { name: 'OpenAI', baseUrl: 'https://api.openai.com/v1', apiFormat: 'openai-chat', models: ['gpt-4o', 'gpt-4o-mini', 'gpt-4-turbo', 'gpt-3.5-turbo'], keyHint: 'OpenAI API Key（sk- 开头）', keyPlaceholder: 'sk-...' },
+    deepseek:   { name: 'DeepSeek', baseUrl: 'https://api.deepseek.com/v1', apiFormat: 'openai-chat', models: ['deepseek-chat', 'deepseek-reasoner'], keyHint: 'DeepSeek API Key', keyPlaceholder: 'sk-...' },
+    zhipu:      { name: '智谱 AI', baseUrl: 'https://open.bigmodel.cn/api/paas/v4', apiFormat: 'openai-chat', models: ['glm-4-plus', 'glm-4-flash', 'glm-4-air', 'glm-4-airx', 'glm-4-long', 'glm-4v', 'glm-4v-flash'], keyHint: '智谱 API Key', keyPlaceholder: 'xxx.xxx' },
+    moonshot:   { name: 'Moonshot', baseUrl: 'https://api.moonshot.cn/v1', apiFormat: 'openai-chat', models: ['moonshot-v1-8k', 'moonshot-v1-32k', 'moonshot-v1-128k'], keyHint: 'Moonshot API Key（sk- 开头）', keyPlaceholder: 'sk-...' },
+    qwen:       { name: '通义千问', baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1', apiFormat: 'openai-chat', models: ['qwen-plus', 'qwen-turbo', 'qwen-max', 'qwen-long'], keyHint: '阿里云 DashScope API Key', keyPlaceholder: 'sk-...' },
+    baidu:      { name: '文心一言', baseUrl: 'https://qianfan.baidubce.com/v2', apiFormat: 'openai-chat', models: ['ernie-4.0-turbo-8k', 'ernie-4.0-8k-latest', 'ernie-3.5-8k', 'ernie-speed-128k'], keyHint: '百度千帆 API Key', keyPlaceholder: '...' },
+    minimax:    { name: 'MiniMax', baseUrl: 'https://api.minimax.chat/v1', apiFormat: 'openai-chat', models: ['abab6.5s-chat', 'abab6.5-chat', 'abab6-chat'], keyHint: 'MiniMax API Key', keyPlaceholder: '...' },
+    baichuan:   { name: '百川', baseUrl: 'https://api.baichuan-ai.com/v1', apiFormat: 'openai-chat', models: ['Baichuan4-Turbo', 'Baichuan3-Turbo', 'Baichuan2-Turbo'], keyHint: '百川 API Key', keyPlaceholder: 'sk-...' },
+    yi:         { name: '零一万物', baseUrl: 'https://api.lingyiwanwu.com/v1', apiFormat: 'openai-chat', models: ['yi-large', 'yi-medium', 'yi-lightning', 'yi-vision'], keyHint: '零一万物 API Key', keyPlaceholder: '...' },
+    stepfun:    { name: '阶跃星辰', baseUrl: 'https://api.stepfun.com/v1', apiFormat: 'openai-chat', models: ['step-1-8k', 'step-1-32k', 'step-1-128k', 'step-1v-8k', 'step-1v-32k'], keyHint: '阶跃星辰 API Key', keyPlaceholder: '...' },
+    ollama:     { name: 'Ollama', baseUrl: 'http://localhost:11434', apiFormat: 'ollama-chat', models: ['qwen2.5:7b', 'qwen2.5:14b', 'llama3.1:8b', 'llama3.1:70b', 'deepseek-r1:7b', 'deepseek-r1:14b'], keyHint: 'Ollama 默认无需密钥，随意填写即可', keyPlaceholder: 'ollama' },
   };
 
   function openAiConfig() {
@@ -1954,19 +1960,35 @@
     statusEl.textContent = '';
     statusEl.className = 'ai-config-status';
     overlay.style.display = 'flex';
-    // 加载已保存的配置
     loadAiConfig().then(cfg => {
       if (cfg) {
-        // 尝试根据已保存的 baseUrl 匹配供应商
-        const provider = Object.values(AI_PROVIDERS).find(p => p.baseUrl && cfg.baseUrl && p.baseUrl === cfg.baseUrl);
-        const providerKey = provider ? Object.keys(AI_PROVIDERS).find(k => AI_PROVIDERS[k] === provider) : 'custom';
-        document.getElementById('ai-provider').value = providerKey;
-        applyProviderSelection(providerKey);
+        // 先填 cfg 的所有字段（即使之前保存了错误组合也先还原，再由下面反查/修正）
+        document.getElementById('ai-api-format').value = cfg.apiFormat || 'openai-chat';
         document.getElementById('ai-base-url').value = cfg.baseUrl || '';
         document.getElementById('ai-api-key').value = cfg.apiKey || '';
         document.getElementById('ai-model').value = cfg.model || '';
         document.getElementById('ai-max-tokens').value = cfg.maxTokens || 2000;
         document.getElementById('ai-temperature').value = String(cfg.temperature || 0.7);
+
+        // 先尝试 baseUrl + apiFormat 精准匹配（优先匹配精确组合）
+        let providerKey = 'custom';
+        for (const [k, p] of Object.entries(AI_PROVIDERS)) {
+          if (p.baseUrl && cfg.baseUrl && p.baseUrl === cfg.baseUrl && p.apiFormat === (cfg.apiFormat || 'openai-chat')) {
+            providerKey = k; break;
+          }
+        }
+        // 没有精确命中的话：只要 baseUrl 命中某个服务商（说明用户选了该服务商但之前存错了 format）
+        // 就自动选中该服务商，并强制修正为该服务商的正确 baseUrl + apiFormat（帮用户自动修复脏配置）
+        if (providerKey === 'custom') {
+          for (const [k, p] of Object.entries(AI_PROVIDERS)) {
+            if (p.baseUrl && cfg.baseUrl && p.baseUrl === cfg.baseUrl) {
+              providerKey = k; break;
+            }
+          }
+        }
+        document.getElementById('ai-provider').value = providerKey;
+        // 最后 apply：若命中具体服务商，会强制 baseUrl / apiFormat 同步为正确的预设值并禁用编辑
+        applyProviderSelection(providerKey);
       } else {
         applyProviderSelection('custom');
       }
@@ -1977,30 +1999,37 @@
     document.getElementById('ai-config-overlay').style.display = 'none';
   }
 
-  // 供应商切换时自动填充端点、模型列表、密钥提示
+  // 供应商切换时自动填充端点、API 格式、模型列表、密钥提示
   function applyProviderSelection(providerKey) {
     const p = AI_PROVIDERS[providerKey] || AI_PROVIDERS.custom;
     const urlField = document.getElementById('ai-base-url-field');
     const urlInput = document.getElementById('ai-base-url');
+    const fmtSel = document.getElementById('ai-api-format');
+    const fmtHint = document.getElementById('ai-format-hint');
     const keyHint = document.getElementById('ai-api-key-hint');
     const keyInput = document.getElementById('ai-api-key');
     const modelInput = document.getElementById('ai-model');
     const datalist = document.getElementById('ai-model-list');
 
     if (providerKey === 'custom') {
+      // 自定义模式：端点和格式都可自由编辑
       urlField.style.display = '';
-      urlInput.value = urlInput.value || '';
+      fmtSel.disabled = false;
+      fmtHint.textContent = '自定义模式下请手动填写 Base URL，并选择对应服务商的 API 接口格式';
+      if (!fmtSel.value) fmtSel.value = 'openai-chat';
     } else {
+      // 具体服务商：端点和格式是固定匹配的，禁用格式编辑，避免用户手动改错
       urlField.style.display = 'none';
       urlInput.value = p.baseUrl;
+      fmtSel.value = p.apiFormat || 'openai-chat';
+      fmtSel.disabled = true;
+      fmtHint.textContent = `已根据「${p.name}」自动匹配 API 格式，如需自定义请切换服务商为「自定义」`;
     }
 
     keyHint.textContent = p.keyHint || '用于身份验证的密钥，本地保存不会上传';
     keyInput.placeholder = p.keyPlaceholder || 'sk-...';
 
-    // 填充预设模型到 datalist
     datalist.innerHTML = p.models.map(id => `<option value="${id}">`).join('');
-    // 如果当前模型不在预设列表中且预设列表不为空，清空让用户重新选
     if (p.models.length > 0 && !p.models.includes(modelInput.value)) {
       modelInput.value = '';
     }
@@ -2013,7 +2042,8 @@
       apiKey: document.getElementById('ai-api-key').value.trim(),
       model: document.getElementById('ai-model').value.trim(),
       maxTokens: parseInt(document.getElementById('ai-max-tokens').value) || 2000,
-      temperature: parseFloat(document.getElementById('ai-temperature').value) || 0.7
+      temperature: parseFloat(document.getElementById('ai-temperature').value) || 0.7,
+      apiFormat: document.getElementById('ai-api-format').value || 'openai-chat'
     };
   }
 
@@ -2206,7 +2236,7 @@
   }
 
   // 构建 AI 分析的 prompt
-  function buildAiPrompt(device, scanContext) {
+  function buildAiPrompt(device, scanContext, analysisType) {
     const svcs = (device.services || []).map(s => {
       const port = typeof s === 'object' ? s.port : s;
       const name = typeof s === 'object' ? s.name : (PORT_SERVICES[port] || '未知');
@@ -2217,9 +2247,7 @@
 
     const alerts = (scanContext?.alerts || []).map(a => `  - [${a.level === 'high' ? '高危' : '中危'}] ${a.title}: ${a.detail || ''}`).join('\n') || '  - 无告警';
 
-    return `你是一位资深网络安全分析师。请根据以下局域网扫描设备信息，从"用户画像"和"安全风险"两个维度进行分析。
-
-## 设备信息
+    const deviceInfo = `## 设备信息
 - IP 地址: ${device.ip}
 - MAC 地址: ${device.mac || '未知'}
 - 主机名: ${device.hostname || '未知'}
@@ -2232,7 +2260,48 @@
 ${svcs}
 
 ## 安全告警
-${alerts}
+${alerts}`;
+
+    if (analysisType === 'profile') {
+      return `你是一位资深网络安全分析师。请根据以下局域网扫描设备信息，分析该设备使用者的"用户画像"。
+
+${deviceInfo}
+
+## 输出要求
+请用中文，按以下 Markdown 格式输出（不要输出其他内容）：
+
+### 使用者身份推测
+推测该设备的使用者身份（如管理员、普通员工、IoT 设备、攻击者等），给出判断依据。
+
+### 用途场景
+分析该设备可能的用途场景（如办公、开发、监控、文件共享等）。
+
+### 技术水平评估
+根据开放端口和服务推断使用者的技术水平（高/中/低），给出理由。`;
+    }
+
+    if (analysisType === 'security') {
+      return `你是一位资深网络安全分析师。请根据以下局域网扫描设备信息，分析该设备的"安全风险"。
+
+${deviceInfo}
+
+## 输出要求
+请用中文，按以下 Markdown 格式输出（不要输出其他内容）：
+
+### 风险评估总览
+给出整体安全风险等级（高/中/低），一句话概括。
+
+### 风险点详解
+列出每个风险点，标注风险等级（高/中/低），包括端口暴露、协议安全、权限风险、潜在攻击面等。
+
+### 加固建议
+给出 3-5 条具体可操作的安全加固建议。`;
+    }
+
+    // full
+    return `你是一位资深网络安全分析师。请根据以下局域网扫描设备信息，从"用户画像"和"安全风险"两个维度进行全面分析。
+
+${deviceInfo}
 
 ## 输出要求
 请用中文，按以下 Markdown 格式输出（不要输出其他内容）：
@@ -2272,52 +2341,166 @@ ${alerts}
     return null;
   }
 
-  // 浏览器模式：直接用 fetch 调用 AI API（支持流式 + Abort 超时 + 非流式回退）
-  async function fetchAiAnalysis(cfg, device, scanContext, onChunk, timeoutMs = 60000) {
-    const prompt = buildAiPrompt(device, scanContext);
-    const isAnthropic = cfg.baseUrl.toLowerCase().includes('anthropic');
-    const anthBase = cfg.baseUrl.replace(/\/+$/, '');
-    const url = isAnthropic
-      ? anthBase + (anthBase.includes('/v1') ? '/messages' : '/v1/messages')
-      : anthBase + '/chat/completions';
+  // 根据 apiFormat 构造请求（浏览器 + Electron 共用逻辑）
+  function buildAiRequest(cfg, systemPrompt, userPrompt, stream) {
+    const format = cfg.apiFormat || 'openai-chat';
+    const baseUrl = cfg.baseUrl.replace(/\/+$/, '');
+    const sysMsg = systemPrompt;
+    const usrMsg = userPrompt;
+    const maxT = cfg.maxTokens || 2000;
+    const temp = cfg.temperature || 0.7;
 
-    let body, headers;
-    if (isAnthropic) {
-      body = JSON.stringify({
-        model: cfg.model,
-        system: '你是一位专业的网络安全分析师，擅长分析局域网设备的安全风险。请使用中文回答，输出 Markdown 格式。',
-        messages: [{ role: 'user', content: prompt }],
-        max_tokens: Math.min(cfg.maxTokens || 2000, 4096),
-        stream: true
-      });
-      headers = {
-        'Content-Type': 'application/json',
-        'x-api-key': cfg.apiKey,
-        'anthropic-version': '2023-06-01'
-      };
-    } else {
-      body = JSON.stringify({
-        model: cfg.model,
-        messages: [
-          { role: 'system', content: '你是一位专业的网络安全分析师，擅长分析局域网设备的安全风险。请使用中文回答，输出 Markdown 格式。' },
-          { role: 'user', content: prompt }
-        ],
-        max_tokens: cfg.maxTokens || 2000,
-        temperature: cfg.temperature || 0.7,
-        stream: true
-      });
-      headers = {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${cfg.apiKey}`
-      };
+    switch (format) {
+      case 'anthropic-messages': {
+        const url = baseUrl + (baseUrl.includes('/v1') ? '/messages' : '/v1/messages');
+        return {
+          url,
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-api-key': cfg.apiKey,
+            'anthropic-version': '2023-06-01'
+          },
+          body: JSON.stringify({
+            model: cfg.model,
+            system: sysMsg,
+            messages: [{ role: 'user', content: usrMsg }],
+            max_tokens: Math.min(maxT, 8192),
+            temperature: temp,
+            stream: !!stream
+          }),
+          format: 'anthropic-messages'
+        };
+      }
+      case 'openai-responses': {
+        const url = baseUrl + (baseUrl.includes('/v1') ? '/responses' : '/v1/responses');
+        return {
+          url,
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${cfg.apiKey}`
+          },
+          body: JSON.stringify({
+            model: cfg.model,
+            instructions: sysMsg,
+            input: [{ role: 'user', content: [{ type: 'input_text', text: usrMsg }] }],
+            temperature: temp,
+            max_output_tokens: Math.min(maxT, 8192),
+            stream: !!stream
+          }),
+          format: 'openai-responses'
+        };
+      }
+      case 'openai-completions': {
+        const url = baseUrl + (baseUrl.includes('/v1') ? '/completions' : '/v1/completions');
+        return {
+          url,
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${cfg.apiKey}`
+          },
+          body: JSON.stringify({
+            model: cfg.model,
+            prompt: `${sysMsg}\n\n用户：${usrMsg}\n助理：`,
+            suffix: null,
+            temperature: temp,
+            max_tokens: Math.min(maxT, 8192),
+            stream: !!stream
+          }),
+          format: 'openai-completions'
+        };
+      }
+      case 'gemini': {
+        const url = `${baseUrl}/models/${cfg.model}:${stream ? 'streamGenerateContent' : 'generateContent'}?key=${encodeURIComponent(cfg.apiKey)}`;
+        return {
+          url,
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            system_instruction: { parts: [{ text: sysMsg }] },
+            contents: [{ role: 'user', parts: [{ text: usrMsg }] }],
+            generationConfig: { temperature: temp, maxOutputTokens: Math.min(maxT, 8192) }
+          }),
+          format: 'gemini'
+        };
+      }
+      case 'ollama-chat': {
+        const url = baseUrl + '/api/chat';
+        return {
+          url,
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            model: cfg.model,
+            messages: [
+              { role: 'system', content: sysMsg },
+              { role: 'user', content: usrMsg }
+            ],
+            options: { temperature: temp, num_predict: Math.min(maxT, 8192) },
+            stream: !!stream
+          }),
+          format: 'ollama-chat'
+        };
+      }
+      case 'openai-chat':
+      default: {
+        const url = baseUrl + '/chat/completions';
+        return {
+          url,
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${cfg.apiKey}`
+          },
+          body: JSON.stringify({
+            model: cfg.model,
+            messages: [
+              { role: 'system', content: sysMsg },
+              { role: 'user', content: usrMsg }
+            ],
+            max_tokens: Math.min(maxT, 8192),
+            temperature: temp,
+            stream: !!stream
+          }),
+          format: 'openai-chat'
+        };
+      }
     }
+  }
+
+  // 从任意格式的 JSON chunk 中提取文本增量
+  function extractDeltaFromJson(json, format) {
+    // 优先用通用 extractChoiceText
+    const g = extractChoiceText(json);
+    if (g) return g;
+    // 各格式专属兜底
+    if (!format || format === 'openai-chat' || format === 'openai-responses' || format === 'openai-completions') return null;
+    if (format === 'ollama-chat') {
+      if (json?.message?.content) return json.message.content;
+    }
+    if (format === 'gemini') {
+      // stream: candidates[0].content.parts[0].text / non-stream: same
+      const c = json?.candidates?.[0];
+      if (c?.content?.parts?.[0]?.text) return c.content.parts[0].text;
+      if (c?.output) return c.output;
+    }
+    return null;
+  }
+
+  // 浏览器模式：直接用 fetch 调用 AI API（支持流式 + Abort 超时 + 非流式回退）
+  async function fetchAiAnalysis(cfg, device, scanContext, onChunk, timeoutMs = 60000, analysisType = 'full') {
+    const systemPrompt = '你是一位专业的网络安全分析师，擅长分析局域网设备的安全风险。请使用中文回答，输出 Markdown 格式。';
+    const userPrompt = buildAiPrompt(device, scanContext, analysisType);
+    const req = buildAiRequest(cfg, systemPrompt, userPrompt, true);
 
     const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
     const timer = setTimeout(() => controller && controller.abort(), timeoutMs);
     const signal = controller ? controller.signal : undefined;
 
     try {
-      const res = await fetch(url, { method: 'POST', headers, body, signal });
+      const res = await fetch(req.url, { method: req.method, headers: req.headers, body: req.body, signal });
       clearTimeout(timer);
       if (!res.ok) {
         const errText = await res.text();
@@ -2326,8 +2509,9 @@ ${alerts}
           const j = JSON.parse(errText);
           if (j.error?.message) msg += ': ' + j.error.message;
           else if (j.message) msg += ': ' + j.message;
+          else if (j.msg) msg += ': ' + j.msg;
         } catch (_) {
-          if (errText) msg += ': ' + errText.slice(0, 200);
+          if (errText) msg += ': ' + errText.slice(0, 300);
         }
         return { success: false, error: msg };
       }
@@ -2335,7 +2519,7 @@ ${alerts}
         const text = await res.text();
         try {
           const j = JSON.parse(text);
-          const content = extractChoiceText(j);
+          const content = extractChoiceText(j) || extractDeltaFromJson(j, req.format);
           if (content) return { success: true, content };
         } catch (_) { /* not JSON */ }
         return { success: false, error: '服务器未返回可读内容（长度 ' + text.length + '）' };
@@ -2354,18 +2538,26 @@ ${alerts}
         const str = decoder.decode(value, { stream: true });
         rawBody += str;
         buffer += str;
+        // gemini/ollama 可能每行一个 JSON，没有 data: 前缀；OpenAI/Anthropic 有 data:
         const lines = buffer.split('\n');
         buffer = lines.pop() || '';
 
         for (const line of lines) {
           const trimmed = line.trim();
-          if (!trimmed || trimmed.startsWith(': ')) continue;
-          if (!trimmed.startsWith('data: ')) continue;
-          const data = trimmed.slice(6);
-          if (data === '[DONE]') continue;
+          if (!trimmed) continue;
+          // 1) 标准 SSE data: 前缀
+          let dataStr = trimmed;
+          if (trimmed.startsWith('data: ')) {
+            dataStr = trimmed.slice(6);
+            if (dataStr === '[DONE]') continue;
+          } else if (trimmed.startsWith(': ')) {
+            continue; // 心跳/注释
+          }
           try {
-            const json = JSON.parse(data);
-            const delta = extractChoiceText(json);
+            const json = JSON.parse(dataStr);
+            // ollama 的 done: true 标记
+            if (req.format === 'ollama-chat' && json?.done === true) continue;
+            const delta = extractDeltaFromJson(json, req.format);
             if (delta) {
               streamEmpty = false;
               fullText += delta;
@@ -2405,35 +2597,21 @@ ${alerts}
       // 终极 fallback：再次非流式请求（关闭 stream）
       if (!fullText) {
         try {
-          const nonStreamBody = isAnthropic
-            ? JSON.stringify({
-                model: cfg.model,
-                system: '你是一位专业的网络安全分析师，擅长分析局域网设备的安全风险。请使用中文回答，输出 Markdown 格式。',
-                messages: [{ role: 'user', content: prompt }],
-                max_tokens: Math.min(cfg.maxTokens || 2000, 4096),
-                stream: false
-              })
-            : JSON.stringify({
-                model: cfg.model,
-                messages: [
-                  { role: 'system', content: '你是一位专业的网络安全分析师，擅长分析局域网设备的安全风险。请使用中文回答，输出 Markdown 格式。' },
-                  { role: 'user', content: prompt }
-                ],
-                max_tokens: cfg.maxTokens || 2000,
-                temperature: cfg.temperature || 0.7,
-                stream: false
-              });
+          const nonStreamReq = buildAiRequest(cfg, systemPrompt, userPrompt, false);
           const ctrl2 = typeof AbortController !== 'undefined' ? new AbortController() : null;
           const t2 = setTimeout(() => ctrl2 && ctrl2.abort(), 45000);
-          const res2 = await fetch(url, {
-            method: 'POST', headers, body: nonStreamBody, signal: ctrl2 ? ctrl2.signal : undefined
+          const res2 = await fetch(nonStreamReq.url, {
+            method: nonStreamReq.method,
+            headers: nonStreamReq.headers,
+            body: nonStreamReq.body,
+            signal: ctrl2 ? ctrl2.signal : undefined
           });
           clearTimeout(t2);
           if (res2.ok) {
             const text2 = await res2.text();
             try {
               const j2 = JSON.parse(text2);
-              const txt2 = extractChoiceText(j2);
+              const txt2 = extractChoiceText(j2) || extractDeltaFromJson(j2, nonStreamReq.format);
               if (txt2) fullText = txt2;
             } catch (_) { /* not JSON */ }
           }
@@ -2459,7 +2637,23 @@ ${alerts}
     return Promise.race([promise, timeout]).finally(() => clearTimeout(timerId));
   }
 
-  async function runAiAnalysis() {
+  // 切换 AI 分析类型按钮的高亮状态（primary 类）
+  function setActiveAiType(type) {
+    try {
+      document.querySelectorAll('.ai-type-btn').forEach(btn => {
+        if (btn.dataset.type === type) {
+          btn.classList.add('primary');
+        } else {
+          btn.classList.remove('primary');
+        }
+      });
+    } catch (_) { /* ignore */ }
+  }
+
+  async function runAiAnalysis(analysisType) {
+    analysisType = analysisType || 'full';
+    // 进入时立即同步高亮（保证无论从哪个入口调用都一致）
+    setActiveAiType(analysisType);
     if (aiAnalyzing) return;
     if (!currentDetailDevice) {
       showToast('请先选择一个设备');
@@ -2475,37 +2669,56 @@ ${alerts}
     }
 
     aiAnalyzing = true;
-    const btn = document.getElementById('ai-analyze-btn');
     const resultEl = document.getElementById('ai-result');
+    const typeBtns = document.querySelectorAll('.ai-type-btn');
+    const typeLabels = { profile: '用户画像分析', security: '安全风险分析', full: '综合分析' };
 
-    // 显示诊断状态：步骤 + spinner
-    const renderStep = (stepText) => {
+    // 禁用所有按钮
+    typeBtns.forEach(b => b.disabled = true);
+
+    // 加载状态（支持 meta 局部替换或整体重渲染）
+    let loadingMetaNode = null;
+    const renderLoading = (stepText) => {
       resultEl.innerHTML = `
-        <div class="ai-analysis-streaming"><div class="dot"></div>
-          <div style="display:flex;flex-direction:column;gap:2px;">
-            <span style="font-weight:600;color:var(--scanner-ink);">AI 分析中...</span>
-            <span style="font-size:10px;color:var(--scanner-ink-3);">${stepText}</span>
-          </div>
+        <div class="ai-loading">
+          <div class="ai-loading-header"><div class="dot"></div> AI ${typeLabels[analysisType]} 进行中...</div>
+          <div class="ai-loading-meta">${stepText}</div>
+          <div class="ai-loading-bar"><div class="ai-loading-bar-inner"></div></div>
         </div>`;
+      loadingMetaNode = resultEl.querySelector('.ai-loading-meta');
+    };
+    // 仅更新等待计时的秒数（不重新渲染整个 loading 容器，避免动画闪烁）
+    const updateLoadingElapsed = (secText) => {
+      if (loadingMetaNode && loadingMetaNode.isConnected) {
+        loadingMetaNode.dataset.elapsed = secText;
+        loadingMetaNode.textContent = loadingMetaNode.textContent.replace(/等待响应 \([0-9.]+s\)/, `等待响应 (${secText}s)`);
+      }
+    };
+    let loadingTimer = null;
+    const stopLoadingTimer = () => {
+      if (loadingTimer) { clearInterval(loadingTimer); loadingTimer = null; }
     };
 
     try {
-      btn.disabled = true;
-      btn.innerHTML = '<i data-lucide="loader-2" style="width:13px;height:13px;animation:spin 1s linear infinite;"></i> 分析中';
-      lucide.createIcons();
-
       const deviceAlerts = activeAlerts.filter(a => a.ip === currentDetailDevice.ip);
       const scanContext = {
         cidr: selectedAdapter?.cidr || '-',
         alerts: deviceAlerts
       };
-      const modeName = (isElectron && api.aiAnalyzeDevice) ? 'Electron IPC 模式' : '浏览器 Fetch 模式';
-      renderStep(`环境: ${modeName}<br>模型: ${cfg.model}<br>准备发送请求 (0s)...`);
+      const modeName = (isElectron && api.aiAnalyzeDevice) ? 'Electron IPC' : '浏览器 Fetch';
+      renderLoading(`环境: ${modeName} ｜ 模型: ${cfg.model} ｜ 正在发送请求...`);
 
       let streamedText = '';
       const appendChunk = (chunk) => {
+        // 第一块内容到达：停止等待计时，进入"正在输出"状态
+        if (!streamedText) stopLoadingTimer();
         streamedText += chunk;
-        resultEl.innerHTML = '<div class="ai-analysis-content">' + renderMarkdown(streamedText) + '</div>';
+        resultEl.innerHTML =
+          '<div class="ai-result-toolbar">' +
+            '<span class="ai-result-label"><i data-lucide="sparkles" style="width:12px;height:12px;"></i> AI 正在输出</span>' +
+          '</div>' +
+          '<div class="ai-analysis-content">' + renderMarkdown(streamedText) + '</div>';
+        resultEl.scrollTop = resultEl.scrollHeight;
       };
 
       // 清理 + 重新挂接 Electron 流式监听
@@ -2516,49 +2729,63 @@ ${alerts}
 
       let result;
       const startedAt = Date.now();
+      // 每 100ms 刷新一次"等待响应 (X.Xs)"，给用户明确的进度感知
+      const tickElapsed = () => {
+        updateLoadingElapsed(((Date.now() - startedAt) / 1000).toFixed(1));
+      };
 
       if (isElectron && api.aiAnalyzeDevice) {
-        // 关键：用 Promise.race 给 IPC 加 75 秒超时，避免 invoke 永远 pending
-        renderStep(`环境: ${modeName}<br>模型: ${cfg.model}<br>已发送请求，等待响应 (${((Date.now() - startedAt) / 1000).toFixed(1)}s)...`);
+        renderLoading(`环境: ${modeName} ｜ 模型: ${cfg.model} ｜ 等待响应 (0.0s)...`);
+        loadingTimer = setInterval(tickElapsed, 100);
         try {
           result = await withTimeout(
             api.aiAnalyzeDevice({
               device: currentDetailDevice,
               localInfo: localInfo,
-              scanContext: scanContext
+              scanContext: scanContext,
+              analysisType: analysisType
             }),
             75000,
-            'Electron IPC 调用超时（75s），可能主进程未监听该事件或无网络，请重启程序后重试'
+            'AI 调用超时（75s），请检查网络或重启程序后重试'
           );
         } catch (ipcErr) {
           result = { success: false, error: ipcErr.message || String(ipcErr) };
         }
       } else if (!isElectron && !window.fetch) {
-        result = { success: false, error: '当前环境不支持 fetch，请使用现代浏览器或用 Electron 打开本程序' };
+        result = { success: false, error: '当前环境不支持 fetch，请使用 Electron 打开本程序' };
       } else {
-        renderStep(`环境: ${modeName}<br>端点: ${cfg.baseUrl.replace(/\/+$/, '')}<br>已发送请求，等待响应...`);
-        result = await fetchAiAnalysis(cfg, currentDetailDevice, scanContext, appendChunk, 75000);
+        renderLoading(`环境: ${modeName} ｜ 端点: ${cfg.baseUrl.replace(/\/+$/, '')} ｜ 等待响应 (0.0s)...`);
+        loadingTimer = setInterval(tickElapsed, 100);
+        result = await fetchAiAnalysis(cfg, currentDetailDevice, scanContext, appendChunk, 75000, analysisType);
       }
 
       if (aiStreamCleanup) { try { aiStreamCleanup(); } catch (_) {} aiStreamCleanup = null; }
 
-      if (result.success) {
-        const html = renderMarkdown(result.content || streamedText);
-        if (!html || html.length < 10) {
-          resultEl.innerHTML = '<div class="ai-analysis-error"><i data-lucide="alert-triangle" style="width:13px;height:13px;"></i> AI 返回内容为空，请尝试更换模型或调整 Prompt</div>';
-        } else {
-          resultEl.innerHTML = '<div class="ai-analysis-content">' + html + '</div>';
-        }
+      const finalText = result.content || streamedText;
+
+      if (result.success && finalText && finalText.trim().length > 0) {
+        const html = renderMarkdown(finalText);
+        resultEl.innerHTML =
+          '<div class="ai-result-toolbar">' +
+            '<span class="ai-result-label"><i data-lucide="check-circle" style="width:12px;height:12px;color:var(--scanner-state-success);"></i> ' + typeLabels[analysisType] + ' · 已完成</span>' +
+            '<div class="ai-result-actions">' +
+              '<button class="ai-result-btn" id="ai-copy-btn"><i data-lucide="copy" style="width:11px;height:11px;"></i> 复制</button>' +
+              '<button class="ai-result-btn" id="ai-retry-btn"><i data-lucide="refresh-cw" style="width:11px;height:11px;"></i> 重新分析</button>' +
+            '</div>' +
+          '</div>' +
+          '<div class="ai-analysis-content">' + html + '</div>';
+        // 绑定复制和重新分析
+        document.getElementById('ai-copy-btn')?.addEventListener('click', () => {
+          navigator.clipboard.writeText(finalText).then(() => showToast('已复制到剪贴板'));
+        });
+        document.getElementById('ai-retry-btn')?.addEventListener('click', () => runAiAnalysis(analysisType));
       } else {
         resultEl.innerHTML =
           '<div class="ai-analysis-error">' +
-          '<i data-lucide="alert-triangle" style="width:13px;height:13px;vertical-align:-2px;"></i> ' +
-          '<b style="margin-right:6px;">分析失败</b>' +
-          '<div style="margin-top:6px;line-height:1.6;word-break:break-all;">' +
-          (result.error || '未知错误') +
-          '</div>' +
-          '<div style="margin-top:10px;font-size:10px;color:var(--scanner-ink-3);">' +
-          '环境: ' + modeName + '｜模型: ' + cfg.model + '｜端点: ' + cfg.baseUrl +
+          '<i data-lucide="alert-triangle" style="width:14px;height:14px;vertical-align:-2px;"></i> ' +
+          '<b>分析失败</b>' +
+          '<div style="margin-top:8px;line-height:1.7;word-break:break-all;">' +
+          (result.error || 'AI 返回内容为空，请检查模型配置或更换模型') +
           '</div></div>';
       }
       lucide.createIcons();
@@ -2567,13 +2794,13 @@ ${alerts}
       resultEl.innerHTML =
         '<div class="ai-analysis-error">' +
         '<b>分析异常</b>' +
-        '<div style="margin-top:6px;">' + (e && e.message ? e.message : String(e)) + '</div>' +
+        '<div style="margin-top:8px;line-height:1.7;">' + (e && e.message ? e.message : String(e)) + '</div>' +
         '</div>';
+      lucide.createIcons();
     } finally {
+      stopLoadingTimer();
       aiAnalyzing = false;
-      btn.disabled = false;
-      btn.innerHTML = '<i data-lucide="brain"></i> 重新分析';
-      try { lucide.createIcons(); } catch (_) {}
+      typeBtns.forEach(b => b.disabled = false);
     }
   }
 

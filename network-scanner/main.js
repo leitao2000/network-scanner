@@ -471,6 +471,250 @@ ipcMain.handle('app:showAbout', async () => {
 // ── AI 模型配置与分析 ──────────────────────────
 const AI_CONFIG_FILE = path.join(app.getPath('userData'), 'ai-config.json');
 
+// 根据 apiFormat 构造请求（主进程共用）
+function buildAiRequest(config, systemPrompt, userPrompt, stream) {
+  const format = config.apiFormat || 'openai-chat';
+  const baseUrl = (config.baseUrl || '').replace(/\/+$/, '');
+  const maxT = config.maxTokens || 2000;
+  const temp = config.temperature || 0.7;
+
+  switch (format) {
+    case 'anthropic-messages': {
+      const url = baseUrl + (baseUrl.includes('/v1') ? '/messages' : '/v1/messages');
+      return {
+        url,
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': config.apiKey,
+          'anthropic-version': '2023-06-01'
+        },
+        body: JSON.stringify({
+          model: config.model,
+          system: systemPrompt,
+          messages: [{ role: 'user', content: userPrompt }],
+          max_tokens: Math.min(maxT, 8192),
+          temperature: temp,
+          stream: !!stream
+        }),
+        format: 'anthropic-messages'
+      };
+    }
+    case 'openai-responses': {
+      const url = baseUrl + (baseUrl.includes('/v1') ? '/responses' : '/v1/responses');
+      return {
+        url,
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${config.apiKey}`
+        },
+        body: JSON.stringify({
+          model: config.model,
+          instructions: systemPrompt,
+          input: [{ role: 'user', content: [{ type: 'input_text', text: userPrompt }] }],
+          temperature: temp,
+          max_output_tokens: Math.min(maxT, 8192),
+          stream: !!stream
+        }),
+        format: 'openai-responses'
+      };
+    }
+    case 'openai-completions': {
+      const url = baseUrl + (baseUrl.includes('/v1') ? '/completions' : '/v1/completions');
+      return {
+        url,
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${config.apiKey}`
+        },
+        body: JSON.stringify({
+          model: config.model,
+          prompt: `${systemPrompt}\n\n用户：${userPrompt}\n助理：`,
+          suffix: null,
+          temperature: temp,
+          max_tokens: Math.min(maxT, 8192),
+          stream: !!stream
+        }),
+        format: 'openai-completions'
+      };
+    }
+    case 'gemini': {
+      const url = `${baseUrl}/models/${config.model}:${stream ? 'streamGenerateContent' : 'generateContent'}?key=${encodeURIComponent(config.apiKey)}`;
+      return {
+        url,
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          system_instruction: { parts: [{ text: systemPrompt }] },
+          contents: [{ role: 'user', parts: [{ text: userPrompt }] }],
+          generationConfig: { temperature: temp, maxOutputTokens: Math.min(maxT, 8192) }
+        }),
+        format: 'gemini'
+      };
+    }
+    case 'ollama-chat': {
+      const url = baseUrl + '/api/chat';
+      return {
+        url,
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: config.model,
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: userPrompt }
+          ],
+          options: { temperature: temp, num_predict: Math.min(maxT, 8192) },
+          stream: !!stream
+        }),
+        format: 'ollama-chat'
+      };
+    }
+    case 'openai-chat':
+    default: {
+      const url = baseUrl + '/chat/completions';
+      return {
+        url,
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${config.apiKey}`
+        },
+        body: JSON.stringify({
+          model: config.model,
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: userPrompt }
+          ],
+          max_tokens: Math.min(maxT, 8192),
+          temperature: temp,
+          stream: !!stream
+        }),
+        format: 'openai-chat'
+      };
+    }
+  }
+}
+
+// 多字段兼容解析（适配各种 API 格式 / 中间件的响应文本提取）
+function extractChoiceText(json) {
+  if (!json) return null;
+  if (json.type === 'content_block_delta' && json.delta?.text) return json.delta.text;
+  if (json.type === 'message_start' && json.message?.content?.[0]?.text) return json.message.content[0].text;
+  if (json.type === 'message_delta' && json.delta?.text) return json.delta.text;
+  if (Array.isArray(json.content)) {
+    const texts = json.content.filter(c => c && c.type === 'text' && c.text).map(c => c.text);
+    if (texts.length) return texts.join('');
+  }
+  if (typeof json.content === 'string' && json.content) return json.content;
+  const ch0 = json.choices && json.choices[0];
+  if (ch0) {
+    if (typeof ch0.delta?.content === 'string' && ch0.delta.content) return ch0.delta.content;
+    if (typeof ch0.message?.content === 'string' && ch0.message.content) return ch0.message.content;
+    if (typeof ch0.text === 'string' && ch0.text) return ch0.text;
+    if (typeof ch0.content === 'string' && ch0.content) return ch0.content;
+  }
+  if (typeof json.text === 'string' && json.text) return json.text;
+  if (typeof json.output === 'string' && json.output) return json.output;
+  if (typeof json.answer === 'string' && json.answer) return json.answer;
+  if (typeof json.result === 'string' && json.result) return json.result;
+  return null;
+}
+
+// 从任意格式的 JSON chunk 中提取文本增量
+function extractDeltaFromJson(json, format) {
+  // 优先用通用 extractChoiceText
+  const g = extractChoiceText(json);
+  if (g) return g;
+  if (!format) return null;
+  if (format === 'ollama-chat') {
+    if (json?.message?.content) return json.message.content;
+  }
+  if (format === 'gemini') {
+    const c = json?.candidates?.[0];
+    if (c?.content?.parts?.[0]?.text) return c.content.parts[0].text;
+    if (c?.output) return c.output;
+  }
+  return null;
+}
+
+// 根据格式获取模型列表端点与认证头
+function buildModelsRequest(config) {
+  const format = config.apiFormat || 'openai-chat';
+  const baseUrl = (config.baseUrl || '').replace(/\/+$/, '');
+
+  if (format === 'ollama-chat') {
+    // Ollama: GET /api/tags
+    return {
+      url: baseUrl + '/api/tags',
+      method: 'GET',
+      headers: { 'Content-Type': 'application/json' },
+      format: 'ollama-chat'
+    };
+  }
+  if (format === 'gemini') {
+    // Gemini: GET https://generativelanguage.googleapis.com/v1/models?key=xxx
+    return {
+      url: `${baseUrl}/models?key=${encodeURIComponent(config.apiKey)}`,
+      method: 'GET',
+      headers: { 'Content-Type': 'application/json' },
+      format: 'gemini'
+    };
+  }
+  if (format === 'anthropic-messages') {
+    return {
+      url: baseUrl + (baseUrl.includes('/v1') ? '/models' : '/v1/models'),
+      method: 'GET',
+      headers: {
+        'x-api-key': config.apiKey,
+        'anthropic-version': '2023-06-01'
+      },
+      format: 'anthropic-messages'
+    };
+  }
+  // openai-chat / openai-responses / openai-completions / custom
+  return {
+    url: baseUrl + '/models',
+    method: 'GET',
+    headers: {
+      'Authorization': `Bearer ${config.apiKey}`,
+      'Content-Type': 'application/json'
+    },
+    format: format || 'openai-chat'
+  };
+}
+
+// 解析模型列表响应
+function parseModelsList(json, format) {
+  let list = [];
+  if (format === 'ollama-chat') {
+    // Ollama: { models: [{ name: "qwen2.5:7b", ... }] }
+    if (Array.isArray(json.models)) {
+      list = json.models.map(m => m.name || m.model).filter(Boolean);
+    }
+  } else if (format === 'gemini') {
+    // Gemini: { models: [{ name: "models/gemini-1.5-flash", ... }] }
+    if (Array.isArray(json.models)) {
+      list = json.models.map(m => {
+        const n = m.name || m.id || '';
+        return n.replace(/^models\//, '');
+      }).filter(Boolean);
+    }
+  } else {
+    // OpenAI 家族: { data: [{ id: "gpt-4o", ... }] }
+    if (Array.isArray(json.data)) {
+      list = json.data.map(m => m.id || m.name).filter(Boolean);
+    } else if (Array.isArray(json.models)) {
+      list = json.models.map(m => typeof m === 'string' ? m : (m.id || m.name)).filter(Boolean);
+    } else if (Array.isArray(json)) {
+      list = json.map(m => typeof m === 'string' ? m : (m.id || m.name)).filter(Boolean);
+    }
+  }
+  return list.sort();
+}
+
 // 读取 AI 配置
 ipcMain.handle('ai:getConfig', async () => {
   try {
@@ -499,51 +743,27 @@ ipcMain.handle('ai:testConnection', async (event, config) => {
   try {
     const https = require('https');
     const http = require('http');
-    const isAnthropic = config.baseUrl.toLowerCase().includes('anthropic');
 
-    let urlStr, postData, headers;
-    if (isAnthropic) {
-      const anthBase = config.baseUrl.replace(/\/+$/, '');
-      urlStr = anthBase + (anthBase.includes('/v1') ? '/messages' : '/v1/messages');
-      postData = JSON.stringify({
-        model: config.model,
-        messages: [{ role: 'user', content: '回复"连接成功"四个字' }],
-        max_tokens: 20
-      });
-      headers = {
-        'Content-Type': 'application/json',
-        'x-api-key': config.apiKey,
-        'anthropic-version': '2023-06-01'
-      };
-    } else {
-      urlStr = config.baseUrl.replace(/\/+$/, '') + '/chat/completions';
-      postData = JSON.stringify({
-        model: config.model,
-        messages: [{ role: 'user', content: '回复"连接成功"四个字' }],
-        max_tokens: 20,
-        temperature: 0
-      });
-      headers = {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${config.apiKey}`
-      };
-    }
+    // 根据 apiFormat 自动构造请求（非流式，最少 token）
+    const sys = '你是一个连接测试助手。';
+    const usr = '回复"连接成功"四个字';
+    const req = buildAiRequest({ ...config, maxTokens: 20, temperature: 0 }, sys, usr, false);
 
-    const urlObj = new URL(urlStr);
+    const urlObj = new URL(req.url);
     const isHttps = urlObj.protocol === 'https:';
     const lib = isHttps ? https : http;
-    headers['Content-Length'] = Buffer.byteLength(postData);
+    const headers = { ...req.headers, 'Content-Length': Buffer.byteLength(req.body) };
 
     return await new Promise((resolve, reject) => {
       const options = {
         hostname: urlObj.hostname,
         port: urlObj.port || (isHttps ? 443 : 80),
         path: urlObj.pathname + (urlObj.search || ''),
-        method: 'POST',
+        method: req.method,
         headers: headers
       };
 
-      const req = lib.request(options, (res) => {
+      const request = lib.request(options, (res) => {
         let body = '';
         res.on('data', (chunk) => { body += chunk; });
         res.on('end', () => {
@@ -554,10 +774,10 @@ ipcMain.handle('ai:testConnection', async (event, config) => {
           }
         });
       });
-      req.on('error', (e) => reject(new Error(e.message)));
-      req.setTimeout(10000, () => { req.destroy(); reject(new Error('请求超时（10s）')); });
-      req.write(postData);
-      req.end();
+      request.on('error', (e) => reject(new Error(e.message)));
+      request.setTimeout(10000, () => { request.destroy(); reject(new Error('请求超时（10s）')); });
+      request.write(req.body);
+      request.end();
     });
   } catch (error) {
     return { success: false, error: error.message };
@@ -569,14 +789,10 @@ ipcMain.handle('ai:fetchModels', async (event, config) => {
   try {
     const https = require('https');
     const http = require('http');
-    const baseUrl = config.baseUrl.replace(/\/+$/, '');
-    const isAnthropic = config.baseUrl.toLowerCase().includes('anthropic');
 
-    // 智谱 OpenAI 兼容端点用 /models，Anthropic 兼容端点用 /v1/models
-    const urlStr = isAnthropic
-      ? baseUrl + (baseUrl.includes('/v1') ? '/models' : '/v1/models')
-      : baseUrl + '/models';
-    const urlObj = new URL(urlStr);
+    // 根据 apiFormat 自动构造模型列表请求
+    const mr = buildModelsRequest(config);
+    const urlObj = new URL(mr.url);
     const isHttps = urlObj.protocol === 'https:';
     const lib = isHttps ? https : http;
 
@@ -585,31 +801,19 @@ ipcMain.handle('ai:fetchModels', async (event, config) => {
         hostname: urlObj.hostname,
         port: urlObj.port || (isHttps ? 443 : 80),
         path: urlObj.pathname + (urlObj.search || ''),
-        method: 'GET',
-        headers: isAnthropic
-          ? { 'x-api-key': config.apiKey, 'anthropic-version': '2023-06-01' }
-          : { 'Authorization': `Bearer ${config.apiKey}` }
+        method: mr.method,
+        headers: mr.headers
       };
 
-      const req = lib.request(options, (res) => {
+      const request = lib.request(options, (res) => {
         let body = '';
         res.on('data', (chunk) => { body += chunk; });
         res.on('end', () => {
           if (res.statusCode >= 200 && res.statusCode < 300) {
             try {
               const j = JSON.parse(body);
-              // OpenAI 格式: { data: [{ id: "gpt-4o", ... }] }
-              // Anthropic 格式: { data: [{ id: "claude-...", ... }] }
-              // 智谱格式: { data: [{ id: "glm-4", ... }] }
-              let list = [];
-              if (Array.isArray(j.data)) {
-                list = j.data.map(m => m.id || m.name).filter(Boolean);
-              } else if (Array.isArray(j.models)) {
-                list = j.models.map(m => typeof m === 'string' ? m : (m.id || m.name)).filter(Boolean);
-              } else if (Array.isArray(j)) {
-                list = j.map(m => typeof m === 'string' ? m : (m.id || m.name)).filter(Boolean);
-              }
-              resolve(list.sort());
+              const list = parseModelsList(j, mr.format);
+              resolve(list);
             } catch (e) {
               reject(new Error('解析模型列表失败: ' + e.message));
             }
@@ -626,9 +830,9 @@ ipcMain.handle('ai:fetchModels', async (event, config) => {
           }
         });
       });
-      req.on('error', (e) => reject(new Error(e.message)));
-      req.setTimeout(10000, () => { req.destroy(); reject(new Error('请求超时（10s）')); });
-      req.end();
+      request.on('error', (e) => reject(new Error(e.message)));
+      request.setTimeout(10000, () => { request.destroy(); reject(new Error('请求超时（10s）')); });
+      request.end();
     });
 
     return { success: true, models };
@@ -638,7 +842,7 @@ ipcMain.handle('ai:fetchModels', async (event, config) => {
 });
 
 // AI 分析设备
-ipcMain.handle('ai:analyzeDevice', async (event, { device, localInfo, scanContext }) => {
+ipcMain.handle('ai:analyzeDevice', async (event, { device, localInfo, scanContext, analysisType }) => {
   let config;
   try {
     const fs = require('fs');
@@ -677,9 +881,7 @@ ipcMain.handle('ai:analyzeDevice', async (event, { device, localInfo, scanContex
     gateway: localInfo?.gateway || '未知'
   };
 
-  const prompt = `你是一位资深网络安全分析师。请根据以下局域网扫描设备信息，从"用户画像"和"安全风险"两个维度进行分析。
-
-## 设备信息
+  const deviceInfoStr = `## 设备信息
 - IP 地址: ${deviceInfo.ip}
 - MAC 地址: ${deviceInfo.mac}
 - 主机名: ${deviceInfo.hostname}
@@ -692,7 +894,45 @@ ipcMain.handle('ai:analyzeDevice', async (event, { device, localInfo, scanContex
 ${deviceInfo.openPorts}
 
 ## 安全告警
-${deviceInfo.alerts}
+${deviceInfo.alerts}`;
+
+  let prompt;
+  if (analysisType === 'profile') {
+    prompt = `你是一位资深网络安全分析师。请根据以下局域网扫描设备信息，分析该设备使用者的"用户画像"。
+
+${deviceInfoStr}
+
+## 输出要求
+请用中文，按以下 Markdown 格式输出（不要输出其他内容）：
+
+### 使用者身份推测
+推测该设备的使用者身份（如管理员、普通员工、IoT 设备、攻击者等），给出判断依据。
+
+### 用途场景
+分析该设备可能的用途场景（如办公、开发、监控、文件共享等）。
+
+### 技术水平评估
+根据开放端口和服务推断使用者的技术水平（高/中/低），给出理由。`;
+  } else if (analysisType === 'security') {
+    prompt = `你是一位资深网络安全分析师。请根据以下局域网扫描设备信息，分析该设备的"安全风险"。
+
+${deviceInfoStr}
+
+## 输出要求
+请用中文，按以下 Markdown 格式输出（不要输出其他内容）：
+
+### 风险评估总览
+给出整体安全风险等级（高/中/低），一句话概括。
+
+### 风险点详解
+列出每个风险点，标注风险等级（高/中/低），包括端口暴露、协议安全、权限风险、潜在攻击面等。
+
+### 加固建议
+给出 3-5 条具体可操作的安全加固建议。`;
+  } else {
+    prompt = `你是一位资深网络安全分析师。请根据以下局域网扫描设备信息，从"用户画像"和"安全风险"两个维度进行全面分析。
+
+${deviceInfoStr}
 
 ## 输出要求
 请用中文，按以下 Markdown 格式输出（不要输出其他内容）：
@@ -705,55 +945,30 @@ ${deviceInfo.alerts}
 
 ### 建议措施
 给出 3-5 条具体可操作的安全加固建议。`;
+  }
 
   try {
     const https = require('https');
     const http = require('http');
-
-    // 检测 API 类型：URL 包含 anthropic 则使用 Anthropic 格式，否则 OpenAI
-    const isAnthropic = config.baseUrl.toLowerCase().includes('anthropic');
-
-    // 多字段兼容解析（适配各种 OpenAI 兼容中间件）
-    const extractChoiceText = (json) => {
-      if (!json) return null;
-      if (json.type === 'content_block_delta' && json.delta?.text) return json.delta.text;
-      if (json.type === 'message_start' && json.message?.content?.[0]?.text) return json.message.content[0].text;
-      if (json.type === 'message_delta' && json.delta?.text) return json.delta.text;
-      if (Array.isArray(json.content)) {
-        const texts = json.content.filter(c => c && c.type === 'text' && c.text).map(c => c.text);
-        if (texts.length) return texts.join('');
-      }
-      if (typeof json.content === 'string' && json.content) return json.content;
-      const ch0 = json.choices && json.choices[0];
-      if (ch0) {
-        if (typeof ch0.delta?.content === 'string' && ch0.delta.content) return ch0.delta.content;
-        if (typeof ch0.message?.content === 'string' && ch0.message.content) return ch0.message.content;
-        if (typeof ch0.text === 'string' && ch0.text) return ch0.text;
-        if (typeof ch0.content === 'string' && ch0.content) return ch0.content;
-      }
-      if (typeof json.text === 'string' && json.text) return json.text;
-      if (typeof json.output === 'string' && json.output) return json.output;
-      if (typeof json.answer === 'string' && json.answer) return json.answer;
-      if (typeof json.result === 'string' && json.result) return json.result;
-      return null;
-    };
+    const systemPrompt = '你是一位专业的网络安全分析师，擅长分析局域网设备的安全风险。请使用中文回答，输出 Markdown 格式。';
 
     // 发送 HTTP 请求的辅助函数
-    function doRequest(urlStr, headers, postData, timeoutMs) {
-      const urlObj = new URL(urlStr);
+    function doRequest(reqCfg, timeoutMs) {
+      const urlObj = new URL(reqCfg.url);
       const isHttps = urlObj.protocol === 'https:';
       const lib = isHttps ? https : http;
+      const headers = { ...reqCfg.headers, 'Content-Length': Buffer.byteLength(reqCfg.body) };
 
       return new Promise((resolve, reject) => {
         const options = {
           hostname: urlObj.hostname,
           port: urlObj.port || (isHttps ? 443 : 80),
           path: urlObj.pathname + (urlObj.search || ''),
-          method: 'POST',
-          headers: { ...headers, 'Content-Length': Buffer.byteLength(postData) }
+          method: reqCfg.method,
+          headers: headers
         };
 
-        const req = lib.request(options, (res) => {
+        const request = lib.request(options, (res) => {
           let body = '';
           res.on('data', (chunk) => { body += chunk.toString(); });
           res.on('end', () => {
@@ -761,53 +976,71 @@ ${deviceInfo.alerts}
           });
         });
 
-        req.on('error', (e) => reject(new Error(e.message)));
-        req.setTimeout(timeoutMs, () => { req.destroy(); reject(new Error(`请求超时（${timeoutMs / 1000}s）`)); });
-        req.write(postData);
-        req.end();
+        request.on('error', (e) => reject(new Error(e.message)));
+        request.setTimeout(timeoutMs, () => { request.destroy(); reject(new Error(`请求超时（${timeoutMs / 1000}s）`)); });
+        request.write(reqCfg.body);
+        request.end();
       });
     }
 
-    const baseUrl = config.baseUrl.replace(/\/+$/, '');
-
-    // ── 第一步：直接用非流式请求（最可靠） ──
-    let urlStr, postData, headers;
-
-    if (isAnthropic) {
-      urlStr = baseUrl + (baseUrl.includes('/v1') ? '/messages' : '/v1/messages');
-      postData = JSON.stringify({
-        model: config.model,
-        system: '你是一位专业的网络安全分析师，擅长分析局域网设备的安全风险。请使用中文回答，输出 Markdown 格式。',
-        messages: [{ role: 'user', content: prompt }],
-        max_tokens: Math.min(config.maxTokens || 2000, 4096),
-        stream: false
-      });
-      headers = {
-        'Content-Type': 'application/json',
-        'x-api-key': config.apiKey,
-        'anthropic-version': '2023-06-01'
-      };
-    } else {
-      urlStr = baseUrl + '/chat/completions';
-      postData = JSON.stringify({
-        model: config.model,
-        messages: [
-          { role: 'system', content: '你是一位专业的网络安全分析师，擅长分析局域网设备的安全风险。请使用中文回答，输出 Markdown 格式。' },
-          { role: 'user', content: prompt }
-        ],
-        max_tokens: config.maxTokens || 2000,
-        temperature: config.temperature || 0.7,
-        stream: false
-      });
-      headers = {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${config.apiKey}`
-      };
+    // 解析流式响应文本（兼容 SSE data: 前缀 + 每行 JSON（Ollama/Gemini））
+    function parseStreamBody(rawBody, reqFormat) {
+      let text = '';
+      let empty = true;
+      let buffer = '';
+      const lines = rawBody.split('\n');
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+        if (trimmed.startsWith(': ')) continue; // SSE 心跳/注释
+        let dataStr = trimmed;
+        if (trimmed.startsWith('data: ')) {
+          dataStr = trimmed.slice(6);
+          if (dataStr === '[DONE]') continue;
+        }
+        try {
+          const json = JSON.parse(dataStr);
+          if (reqFormat === 'ollama-chat' && json?.done === true) continue;
+          const delta = extractDeltaFromJson(json, reqFormat);
+          if (delta) {
+            empty = false;
+            text += delta;
+            if (mainWindow && !mainWindow.isDestroyed()) {
+              mainWindow.webContents.send('ai:streamChunk', delta);
+            }
+          }
+        } catch (_) { /* skip invalid JSON */ }
+      }
+      // 流式解析不出，尝试拼接整体/直接 JSON 解析
+      if (empty && rawBody.trim()) {
+        try {
+          let cleaned = rawBody;
+          if (cleaned.includes('data: ')) {
+            cleaned = cleaned.split('\n').map(l => l.trim())
+              .filter(l => l.startsWith('data: ') && l.slice(6) !== '[DONE]')
+              .map(l => l.slice(6)).join('');
+          }
+          if (cleaned) {
+            const j = JSON.parse(cleaned);
+            const t = extractChoiceText(j) || extractDeltaFromJson(j, reqFormat);
+            if (t) text = t;
+          }
+        } catch (_) { /* ignore */ }
+        if (!text) {
+          try {
+            const rawJ = JSON.parse(rawBody);
+            const t = extractChoiceText(rawJ) || extractDeltaFromJson(rawJ, reqFormat);
+            if (t) text = t;
+          } catch (_) { /* ignore */ }
+        }
+      }
+      return { text, empty: !text };
     }
 
-    const res = await doRequest(urlStr, headers, postData, 60000);
+    // ── 第一步：非流式请求（最可靠） ──
+    const nonStreamReq = buildAiRequest(config, systemPrompt, prompt, false);
+    const res = await doRequest(nonStreamReq, 60000);
 
-    // 非 2xx 错误
     if (res.statusCode < 200 || res.statusCode >= 300) {
       let msg = `HTTP ${res.statusCode}`;
       try {
@@ -824,15 +1057,12 @@ ${deviceInfo.alerts}
     let fullText = '';
     try {
       const j = JSON.parse(res.body);
-      fullText = extractChoiceText(j) || '';
+      fullText = extractChoiceText(j) || extractDeltaFromJson(j, nonStreamReq.format) || '';
     } catch (_) {
-      // 响应不是 JSON，可能是纯文本
       if (res.body && res.body.trim()) fullText = res.body.trim();
     }
 
-    // 如果非流式拿到了内容，直接返回
     if (fullText) {
-      // 模拟流式推送（一次性推全部内容，让前端有"打字机"效果）
       if (mainWindow && !mainWindow.isDestroyed()) {
         const chunks = fullText.match(/[\s\S]{1,20}/g) || [fullText];
         for (const chunk of chunks) {
@@ -843,29 +1073,8 @@ ${deviceInfo.alerts}
     }
 
     // ── 第二步：非流式也没拿到内容，尝试流式请求 ──
-    let streamPostData;
-    if (isAnthropic) {
-      streamPostData = JSON.stringify({
-        model: config.model,
-        system: '你是一位专业的网络安全分析师，擅长分析局域网设备的安全风险。请使用中文回答，输出 Markdown 格式。',
-        messages: [{ role: 'user', content: prompt }],
-        max_tokens: Math.min(config.maxTokens || 2000, 4096),
-        stream: true
-      });
-    } else {
-      streamPostData = JSON.stringify({
-        model: config.model,
-        messages: [
-          { role: 'system', content: '你是一位专业的网络安全分析师，擅长分析局域网设备的安全风险。请使用中文回答，输出 Markdown 格式。' },
-          { role: 'user', content: prompt }
-        ],
-        max_tokens: config.maxTokens || 2000,
-        temperature: config.temperature || 0.7,
-        stream: true
-      });
-    }
-
-    const streamRes = await doRequest(urlStr, headers, streamPostData, 60000);
+    const streamReq = buildAiRequest(config, systemPrompt, prompt, true);
+    const streamRes = await doRequest(streamReq, 60000);
 
     if (streamRes.statusCode < 200 || streamRes.statusCode >= 300) {
       let msg = `HTTP ${streamRes.statusCode}`;
@@ -878,59 +1087,19 @@ ${deviceInfo.alerts}
       return { success: false, error: msg };
     }
 
-    // 解析流式响应
-    let streamText = '';
-    let streamEmpty = true;
-    const lines = streamRes.body.split('\n');
-    for (const line of lines) {
-      const trimmed = line.trim();
-      if (!trimmed || trimmed.startsWith(': ')) continue;
-      if (!trimmed.startsWith('data: ')) continue;
-      const data = trimmed.slice(6);
-      if (data === '[DONE]') continue;
-      try {
-        const json = JSON.parse(data);
-        const delta = extractChoiceText(json);
-        if (delta) {
-          streamEmpty = false;
-          streamText += delta;
-          if (mainWindow && !mainWindow.isDestroyed()) {
-            mainWindow.webContents.send('ai:streamChunk', delta);
-          }
+    const streamParse = parseStreamBody(streamRes.body, streamReq.format);
+    if (streamParse.text) {
+      // 如果 empty=true 说明是一次性拿的内容，也推送下打字机效果
+      if (streamParse.empty && mainWindow && !mainWindow.isDestroyed()) {
+        const chunks = streamParse.text.match(/[\s\S]{1,20}/g) || [streamParse.text];
+        for (const chunk of chunks) {
+          mainWindow.webContents.send('ai:streamChunk', chunk);
         }
-      } catch (e) { /* skip */ }
-    }
-
-    // 流式也解析不出，尝试拼接整体
-    if (streamEmpty && streamRes.body.trim()) {
-      try {
-        let cleaned = streamRes.body;
-        if (cleaned.includes('data: ')) {
-          cleaned = cleaned.split('\n').map(l => l.trim())
-            .filter(l => l.startsWith('data: ') && l.slice(6) !== '[DONE]')
-            .map(l => l.slice(6)).join('');
-        }
-        if (cleaned) {
-          const j = JSON.parse(cleaned);
-          streamText = extractChoiceText(j) || '';
-        }
-      } catch (_) { /* ignore */ }
-      if (!streamText) {
-        try {
-          const rawJ = JSON.parse(streamRes.body);
-          streamText = extractChoiceText(rawJ) || '';
-        } catch (_) { /* ignore */ }
       }
+      return { success: true, content: streamParse.text };
     }
 
-    if (streamText) {
-      if (mainWindow && !mainWindow.isDestroyed()) {
-        mainWindow.webContents.send('ai:streamChunk', streamText);
-      }
-      return { success: true, content: streamText };
-    }
-
-    return { success: false, error: 'AI 返回内容为空。\n请检查：\n1. 模型名称是否正确\n2. API Key 是否有效\n3. 端点 URL 是否正确\n4. 账户是否有余额/额度\n\n响应原文（前500字符）：\n' + (res.body || streamRes.body || '').slice(0, 500) };
+    return { success: false, error: 'AI 返回内容为空。\n请检查：\n1. 模型名称是否正确\n2. API Key 是否有效\n3. 端点 URL / API 格式 选择是否匹配\n4. 账户是否有余额/额度\n\n响应原文（前500字符）：\n' + (res.body || streamRes.body || '').slice(0, 500) };
   } catch (error) {
     return { success: false, error: error.message };
   }
