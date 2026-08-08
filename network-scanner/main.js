@@ -630,6 +630,24 @@ ${deviceInfo.alerts}
       const req = lib.request(options, (res) => {
         let fullText = '';
         let buffer = '';
+        let errBody = '';
+
+        // 非 2xx 收集错误信息
+        if (res.statusCode < 200 || res.statusCode >= 300) {
+          res.on('data', (chunk) => { errBody += chunk.toString(); });
+          res.on('end', () => {
+            let msg = `HTTP ${res.statusCode}`;
+            try {
+              const j = JSON.parse(errBody);
+              if (j.error?.message) msg += ': ' + j.error.message;
+              else if (j.message) msg += ': ' + j.message;
+            } catch (_) {
+              if (errBody) msg += ': ' + errBody.slice(0, 200);
+            }
+            resolve({ success: false, error: msg });
+          });
+          return;
+        }
 
         res.on('data', (chunk) => {
           buffer += chunk.toString();
@@ -657,11 +675,7 @@ ${deviceInfo.alerts}
         });
 
         res.on('end', () => {
-          if (res.statusCode >= 200 && res.statusCode < 300) {
-            resolve({ success: true, content: fullText });
-          } else {
-            reject(new Error(`HTTP ${res.statusCode}`));
-          }
+          resolve({ success: true, content: fullText });
         });
       });
 

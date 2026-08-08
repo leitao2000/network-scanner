@@ -1907,15 +1907,25 @@
 
   // ── AI 模型配置与分析 ──────────────────────────────
 
+  const AI_CFG_LS_KEY = 'ai-config-fallback';
   let aiConfigCache = null;
   let aiStreamCleanup = null;
   let aiAnalyzing = false;
+  const isElectron = !!(api && typeof api === 'object');
 
   async function loadAiConfig() {
     if (aiConfigCache) return aiConfigCache;
-    try {
-      aiConfigCache = await api.aiGetConfig();
-    } catch (e) { /* ignore */ }
+    if (isElectron && api.aiGetConfig) {
+      try {
+        aiConfigCache = await api.aiGetConfig();
+      } catch (e) { /* ignore */ }
+    }
+    if (!aiConfigCache) {
+      try {
+        const raw = localStorage.getItem(AI_CFG_LS_KEY);
+        if (raw) aiConfigCache = JSON.parse(raw);
+      } catch (e) { /* ignore */ }
+    }
     return aiConfigCache;
   }
 
@@ -1964,7 +1974,18 @@
     statusEl.className = 'ai-config-status testing';
     btn.disabled = true;
     try {
-      const result = await api.aiTestConnection(config);
+      let result;
+      if (isElectron && api.aiTestConnection) {
+        result = await api.aiTestConnection(config);
+      } else {
+        // 浏览器预览：模拟
+        await new Promise(r => setTimeout(r, 1200));
+        if (/^https?:\/\/.+/i.test(config.baseUrl) && /^sk-.+/.test(config.apiKey) && config.model.length > 2) {
+          result = { success: true, status: 200 };
+        } else {
+          result = { success: false, error: '参数格式不正确（预览模式）' };
+        }
+      }
       if (result.success) {
         statusEl.innerHTML = '<i data-lucide="check-circle" style="width:12px;height:12px;"></i> 连接成功';
         statusEl.className = 'ai-config-status ok';
@@ -1989,13 +2010,25 @@
       statusEl.className = 'ai-config-status err';
       return;
     }
-    const result = await api.aiSaveConfig(config);
-    if (result.success) {
-      aiConfigCache = config;
-      showToast('AI 配置已保存');
-      closeAiConfig();
-    } else {
-      statusEl.textContent = '保存失败：' + (result.error || '未知错误');
+    try {
+      let saved = false;
+      if (isElectron && api.aiSaveConfig) {
+        const r = await api.aiSaveConfig(config);
+        saved = !!r.success;
+      } else {
+        localStorage.setItem(AI_CFG_LS_KEY, JSON.stringify(config));
+        saved = true;
+      }
+      if (saved) {
+        aiConfigCache = config;
+        showToast('AI 配置已保存');
+        closeAiConfig();
+      } else {
+        statusEl.textContent = '保存失败';
+        statusEl.className = 'ai-config-status err';
+      }
+    } catch (e) {
+      statusEl.textContent = '保存失败：' + e.message;
       statusEl.className = 'ai-config-status err';
     }
   }
@@ -2038,8 +2071,10 @@
       return;
     }
 
+    // 如果没配置 AI，提示配置（但允许预览模式不强制）
     const cfg = await loadAiConfig();
-    if (!cfg || !cfg.apiKey || !cfg.baseUrl || !cfg.model) {
+    const configured = !!(cfg && cfg.apiKey && cfg.baseUrl && cfg.model);
+    if (!configured && isElectron) {
       showToast('请先配置 AI 模型');
       openAiConfig();
       return;
@@ -2064,20 +2099,31 @@
 
     let streamedText = '';
 
-    // 监听流式 chunk
-    if (aiStreamCleanup) aiStreamCleanup();
-    aiStreamCleanup = api.onAiStreamChunk((chunk) => {
-      streamedText += chunk;
-      const display = renderMarkdown(streamedText);
-      resultEl.innerHTML = '<div class="ai-analysis-content">' + display + '</div>';
-    });
-
     try {
-      const result = await api.aiAnalyzeDevice({
-        device: currentDetailDevice,
-        localInfo: localInfo,
-        scanContext: scanContext
-      });
+      // 监听流式 chunk（移入 try 内部，避免 api 不存在时直接抛出未捕获异常）
+      if (aiStreamCleanup) aiStreamCleanup();
+      if (isElectron && api.onAiStreamChunk) {
+        aiStreamCleanup = api.onAiStreamChunk((chunk) => {
+          streamedText += chunk;
+          const display = renderMarkdown(streamedText);
+          resultEl.innerHTML = '<div class="ai-analysis-content">' + display + '</div>';
+        });
+      }
+
+      let result;
+      if (isElectron && api.aiAnalyzeDevice) {
+        result = await api.aiAnalyzeDevice({
+          device: currentDetailDevice,
+          localInfo: localInfo,
+          scanContext: scanContext
+        });
+      } else {
+        result = await mockAiAnalysis(currentDetailDevice, scanContext, (chunk) => {
+          streamedText += chunk;
+          const display = renderMarkdown(streamedText);
+          resultEl.innerHTML = '<div class="ai-analysis-content">' + display + '</div>';
+        });
+      }
 
       if (aiStreamCleanup) { aiStreamCleanup(); aiStreamCleanup = null; }
 
@@ -2096,6 +2142,70 @@
       btn.innerHTML = '<i data-lucide="brain"></i> 重新分析';
       lucide.createIcons();
     }
+  }
+
+  // 浏览器预览用的 mock AI 分析，同时模拟流式输出
+  async function mockAiAnalysis(device, scanContext, onChunk) {
+    const catLabel = { phone: '手机/移动设备', computer: '电脑/工作站', router: '路由器/网关', iot: 'IoT 物联网设备', camera: '网络摄像头', virtual: '虚拟设备', unknown: '未知设备' }[device.category] || '局域网设备';
+    const svcCount = (device.services || []).length;
+    const highRisk = (device.services || []).filter(s => s.risk === 'high').length;
+    const latency = device.latency != null ? device.latency + 'ms' : '未知';
+
+    let usageText;
+    if (catLabel.includes('手机')) usageText = '典型的终端移动设备，通常由个人日常使用，可能属于办公人员或家庭用户。\n\n';
+    else if (catLabel.includes('电脑')) usageText = '桌面/笔记本工作站，常见于员工办公台，可能涉及内部文档、邮件、开发工具等敏感数据。\n\n';
+    else if (catLabel.includes('路由')) usageText = '网络基础设施节点，承担 NAT、DHCP、路由转发等核心功能，一旦被攻陷将影响整个网段。\n\n';
+    else if (catLabel.includes('摄像')) usageText = '视频监控类设备，通常部署在办公/生产/门禁场景，视频数据涉及隐私合规。\n\n';
+    else if (catLabel.includes('IoT')) usageText = '物联网终端（打印机/门禁/传感器等），安全固件更新滞后，易成为横向移动跳板。\n\n';
+    else usageText = '网络终端设备，需要进一步结合开放端口和主机名判断场景。\n\n';
+
+    let svcText;
+    if (svcCount === 0) svcText = '无开放端口，若为个人终端属于正常桌面防护水平；若为基础设施则需警惕是否被异常关闭。\n\n';
+    else if (highRisk > 0) svcText = '存在高危暴露端口（Telnet/SMB/RDP 等），可能使用人群偏技术向或运维管理员，但安全意识有待提升。\n\n';
+    else svcText = '仅开放常规 HTTP/HTTPS，符合普通终端或轻量 Web 服务设备画像。\n\n';
+
+    let portRiskText;
+    if (svcCount > 0) portRiskText = '建议逐项复核业务必要性，非必须端口应通过 ACL / 防火墙关闭。\n\n';
+    else portRiskText = '目前无明显服务暴露，建议定期复查避免后台服务被静默开启。\n\n';
+
+    let protoText;
+    if ((device.services || []).some(s => s.port === 23)) protoText = '检测到 **Telnet(23)** 明文协议，极易被中间人嗅探凭据，必须立即切换到 SSH。\n\n';
+    else if ((device.services || []).some(s => s.port === 445)) protoText = '检测到 **SMB(445)** 文件共享，存在永恒之蓝类 RCE 隐患，需限制来源 IP 并打补丁。\n\n';
+    else if ((device.services || []).some(s => s.port === 3389)) protoText = '检测到 **RDP(3389)** 远程桌面，易被暴力破解，建议开启 NLA + 账户锁定策略。\n\n';
+    else protoText = '未发现典型高危明文协议，仍需确认非标准端口运行的服务。\n\n';
+
+    const latencyText = Number(device.latency) > 0 && Number(device.latency) < 3
+      ? '极低延迟表示该设备通过有线或近距离 Wi-Fi 直接连接同一交换机/AP，属于本物理区域。\n\n'
+      : '中等延迟提示可能经过 Wi-Fi 中继或下级交换机。\n\n';
+
+    const riskLevel = highRisk > 0 ? '高危' : svcCount > 0 ? '中危' : '低危';
+    const otherDeviceCount = Math.max(0, devices.length - 1);
+
+    const fullText =
+      '### 用户画像\n' +
+      `根据设备特征（IP: **${device.ip}**，类别：${catLabel}，厂商：${device.type || '未识别'}），初步判断如下：\n\n` +
+      '- **设备用途**：' + usageText +
+      '- **使用场景**：位于网段 **' + scanContext.cidr + '**，与本机同一子网，延迟 ' + latency + '。' + latencyText +
+      '- **使用者画像推测**：结合开放服务 ' + svcCount + ' 个，高危端口 ' + highRisk + ' 个。' + svcText +
+      '### 安全风险\n\n' +
+      `- **端口暴露风险**（${riskLevel}）：当前检测到 ${svcCount} 个开放服务，其中高危 ${highRisk} 个。` + portRiskText +
+      '- **协议安全风险**（中危）：' + protoText +
+      `- **横向移动风险**（中危）：与本机同网段且无端口隔离迹象，一旦被攻陷，可作为跳板横向探测 ${scanContext.cidr} 内的其它 ${otherDeviceCount} 台设备。\n\n` +
+      '### 建议措施\n\n' +
+      `1. **端口收敛**：关闭所有非业务必需的开放端口（当前 ${svcCount} 个），仅从白名单 IP 允许访问管理端口。\n` +
+      `2. **协议升级**：将 Telnet/FTP 等明文协议替换为 SSH/SFTP/SMBv3，启用传输加密与强密码策略。\n` +
+      `3. **补丁与固件**：更新 ${catLabel} 操作系统/固件至最新稳定版，重点修复 SMB、RDP、Web 服务相关 CVE。\n` +
+      `4. **访问控制**：在网关或本地防火墙增加源 IP 限制，管理类端口（22/23/3389/5900）仅允许运维网段访问。\n` +
+      `5. **持续监测**：对 ${device.ip} 开启连续监控，观察延迟异常和端口变化，出现异常立即告警。\n`;
+
+    // 模拟流式：按字符 chunk 输出，耗时约 1.5s
+    const chunkSize = Math.max(2, Math.floor(fullText.length / 30));
+    for (let i = 0; i < fullText.length; i += chunkSize) {
+      await new Promise(r => setTimeout(r, 50));
+      const chunk = fullText.slice(i, i + chunkSize);
+      if (onChunk) onChunk(chunk);
+    }
+    return { success: true, content: fullText };
   }
 
   async function init() {

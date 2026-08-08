@@ -532,6 +532,46 @@ body {
         flex-direction: column;
         gap: 4px;
       }
+      /* 面板内容滚动：端口列表内嵌滚动，隐藏滚动条，底部统计行数不滚动 */
+      #portscan-result {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+      }
+      #portscan-result .port-list {
+        max-height: 300px;
+        overflow-y: auto;
+        overflow-x: hidden;
+        -ms-overflow-style: none;
+        scrollbar-width: none;
+        padding: 6px 4px 14px 2px;
+      }
+      #portscan-result .port-list::-webkit-scrollbar {
+        width: 0;
+        height: 0;
+        display: none;
+      }
+      #portscan-result .action-panel-hint {
+        margin-top: auto;
+        padding-top: 6px;
+        border-top: 1px dashed var(--scanner-border);
+      }
+      /* Ping / AI 结果多时同样内嵌滚动 */
+      #ping-result,
+      #ai-result {
+        max-height: 360px;
+        overflow-y: auto;
+        overflow-x: hidden;
+        -ms-overflow-style: none;
+        scrollbar-width: none;
+        padding-right: 2px;
+      }
+      #ping-result::-webkit-scrollbar,
+      #ai-result::-webkit-scrollbar {
+        width: 0;
+        height: 0;
+        display: none;
+      }
       .port-item {
         display: flex;
         align-items: center;
@@ -1230,6 +1270,9 @@ body {
         </div>
       </div>
     </div>
+
+    <!-- 右键上下文菜单 -->
+    <div id="ctx-menu" class="ctx-menu" style="display:none;"></div>
 
     <!-- 设备详情抽屉 -->
     <div id="device-detail-overlay" class="drawer-backdrop" style="display:none;">
