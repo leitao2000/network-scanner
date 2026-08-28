@@ -4,6 +4,18 @@
 
 一个功能强大的跨平台网络扫描工具，基于 Electron 构建，支持智能设备发现、端口扫描、网络拓扑可视化等特性。
 
+## 界面预览
+
+> 以下截图基于演示数据生成。
+
+| 主界面 · 设备列表 | 扫描进行中 |
+| :---: | :---: |
+| ![主界面 · 设备列表](docs/images/dashboard.png) | ![扫描进行中](docs/images/scanning.png) |
+
+| 网络拓扑图 | 设备详情 |
+| :---: | :---: |
+| ![网络拓扑图](docs/images/topology.png) | ![设备详情](docs/images/device-detail.png) |
+
 ## 功能特性
 
 ### 🔍 核心扫描功能
@@ -122,6 +134,8 @@ network-scanner/
 │   └── index.html      # 主界面
 ├── assets/
 │   └── lucide.min.js   # 图标库
+├── scripts/            # 截图脚本（mock 数据 + 自动截屏）
+├── docs/images/        # 界面截图
 └── package.json         # 项目配置
 ```
 

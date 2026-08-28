@@ -5,6 +5,9 @@ node_modules/
 dist/
 release/
 
+# Electron 下载缓存（本地安装用）
+.electron-cache/
+
 # IDE
 .vscode/
 .idea/
